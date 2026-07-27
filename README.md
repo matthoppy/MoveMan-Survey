@@ -206,6 +206,42 @@ The capture page holds a screen wake lock while recording, so a phone that would
 sleep mid-walkthrough doesn't stop the recorder. The lock is re-taken whenever the page
 becomes visible again, and a browser that refuses it just records as before.
 
+## Deploying
+
+The app needs a **Node runtime with a writable disk**, and it needs to run as a
+**single instance**. Both fall out of the same design decision, explained below.
+
+Railway, Render, Fly.io or any VPS work unchanged:
+
+- Build command: `npm run build`
+- Start command: `npm start`
+- Environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
+  `ANTHROPIC_API_KEY` for real analysis. `PORT` is supplied by the host.
+
+That gives you an HTTPS URL, which the customer capture page needs — phone browsers
+refuse camera access over plain HTTP, so a LAN address won't do for testing.
+
+### Why single-instance, and when that stops being true
+
+While a customer is filming, their browser posts a video chunk every five seconds and the
+server appends each one to the same file on local disk. That is what makes a flat battery
+mid-survey survivable — the recording is already saved. It also means every chunk of a
+given recording has to reach the same machine.
+
+So this deployment shape will lose recordings:
+
+- **Serverless** (Vercel, Cloudflare Workers, Lambda) — each request may land on a
+  different instance, so chunks scatter and the video is corrupt.
+- **More than one instance** behind a load balancer, unless sessions are pinned.
+
+Neither fails loudly. You get a video that won't play, which is the worst way to find out.
+
+A single container comfortably handles a removals office: chunks are small, and the only
+sustained work is streaming bytes to disk. If you outgrow it, the fix is to stage chunks in
+object storage instead of on disk — `src/lib/storage/` is the only place that changes, and
+the driver interface is already there for it.
+
+
 ## Before this goes near a customer
 
 - **Run it on Supabase, not the local driver.** Without the Supabase keys there are no
