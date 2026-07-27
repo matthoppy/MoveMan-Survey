@@ -496,3 +496,34 @@ test("a real item named in a packing sentence is still counted", () => {
   const raw = offlineAnalyse("This is the dining room. Can you pack the display cabinet please.");
   assert.ok(raw.items.some((i) => i.name === "Display cabinet"));
 });
+
+test("size qualifiers pick the right line, not the generic alias", () => {
+  // "bed" is an alias of the double. Without qualifier awareness it outscores
+  // the single's own name, and a single bed gets priced at 45 cu ft.
+  assert.equal(matchCatalog("single bed")?.id, "bed-single");
+  assert.equal(matchCatalog("double bed")?.id, "bed-double");
+  assert.equal(matchCatalog("king bed")?.id, "bed-king");
+  assert.equal(matchCatalog("super king bed")?.id, "bed-superking");
+  assert.equal(matchCatalog("bunk bed")?.id, "bunk-bed");
+
+  // Same trap with "wardrobe" and "sofa".
+  assert.equal(matchCatalog("single wardrobe")?.id, "wardrobe-1");
+  assert.equal(matchCatalog("triple wardrobe")?.id, "wardrobe-3");
+  assert.equal(matchCatalog("corner sofa")?.id, "sofa-corner");
+  assert.equal(matchCatalog("small bookcase")?.id, "bookcase-sm");
+  assert.equal(matchCatalog("large bookcase")?.id, "bookcase-lg");
+});
+
+test("an unqualified word still falls back to the commonest size", () => {
+  assert.equal(matchCatalog("bed")?.id, "bed-double");
+  assert.equal(matchCatalog("wardrobe")?.id, "wardrobe-2");
+  assert.equal(matchCatalog("sofa")?.id, "sofa-3");
+});
+
+test("a single bed is never priced as a double", () => {
+  const single = matchCatalog("single bed")!;
+  const double = matchCatalog("double bed")!;
+  assert.equal(single.cuFt, 30);
+  assert.equal(double.cuFt, 45);
+  assert.notEqual(single.id, double.id);
+});

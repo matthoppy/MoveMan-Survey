@@ -44,7 +44,7 @@ export const CATALOG: CatalogEntry[] = [
   // ---- Living room ----
   e("sofa-2", "2-seater sofa", 35, ["lounge"], { aliases: ["two seater sofa", "two seater", "2 seater", "loveseat"] }),
   e("sofa-3", "3-seater sofa", 45, ["lounge"], { aliases: ["three seater sofa", "three seater", "3 seater", "sofa", "couch", "settee"] }),
-  e("sofa-corner", "Corner / L-shape sofa", 70, ["lounge"], { dismantle: true, aliases: ["sectional", "l shaped sofa"] }),
+  e("sofa-corner", "Corner / L-shape sofa", 70, ["lounge"], { dismantle: true, aliases: ["corner sofa", "corner suite", "sectional", "l shaped sofa", "l shape sofa"] }),
   e("sofa-bed", "Sofa bed", 55, ["lounge"], { aliases: ["futon"] }),
   e("armchair", "Armchair", 20, ["lounge"], { twoPersonLift: false, aliases: ["easy chair", "occasional chair"] }),
   e("recliner", "Recliner armchair", 28, ["lounge"], { aliases: ["reclining chair"] }),
@@ -189,9 +189,42 @@ export function matchCatalog(description: string, room?: string): CatalogEntry |
     }
 
     if (score <= 0) continue;
+
+    // A qualifier the candidate can't account for means this is the wrong line,
+    // however well the rest of the words match.
+    const unmatchedQualifier = QUALIFIERS.some(
+      (word) => hasWord(q, word) && !names.some((name) => hasWord(name, word)),
+    );
+    if (unmatchedQualifier) score *= 0.35;
+
     if (roomHint && entry.rooms.includes(roomHint)) score += 8;
     if (!best || score > best.score) best = { entry, score };
   }
 
   return best && best.score >= 40 ? best.entry : undefined;
+}
+
+/**
+ * Words that change *which* item you are looking at, not just how it is
+ * described. "single bed" and "double bed" are different lines with 15 cu ft
+ * between them, so a match that ignores the qualifier is wrong even when every
+ * other word lines up — and without this, the generic "bed" alias on the double
+ * outscores the single's own name.
+ */
+const QUALIFIERS = [
+  "single",
+  "double",
+  "king",
+  "super",
+  "triple",
+  "bunk",
+  "corner",
+  "two",
+  "three",
+  "small",
+  "large",
+];
+
+function hasWord(text: string, word: string): boolean {
+  return new RegExp(`(?:^|[^a-z])${word}(?:[^a-z]|$)`).test(text);
 }

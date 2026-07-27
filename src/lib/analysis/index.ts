@@ -39,7 +39,14 @@ export async function analyseSurvey(input: AnalyseInput): Promise<AnalyseResult>
   // items in cluttered rooms — every survey records the model that produced
   // it, so the two can be compared on the same recording.
   const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  // ANTHROPIC_BASE_URL points the client at any endpoint speaking the same
+  // protocol — another provider's Anthropic-compatible API, a local model, or
+  // a stub in tests. Left unset it talks to Anthropic.
+  const client = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    ...(process.env.ANTHROPIC_BASE_URL ? { baseURL: process.env.ANTHROPIC_BASE_URL } : {}),
+  });
 
   const frames = input.frames.slice(0, MAX_FRAMES);
 

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSurvey, updateSurvey } from "@/lib/db";
 import { analyseSurvey, isAiConfigured } from "@/lib/analysis";
 import { withSurveyEstimate } from "@/lib/survey-view";
-import type { AccessDetails } from "@/lib/types";
+import { mergeAccessSuggestion } from "@/lib/access-merge";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -75,7 +75,7 @@ export async function POST(request: Request, { params }: Params) {
     };
 
     if (applyAccessSuggestion && result.accessSuggestion) {
-      patch.origin = { ...survey.origin, ...result.accessSuggestion } as AccessDetails;
+      patch.origin = mergeAccessSuggestion(survey.origin, result.accessSuggestion);
     }
 
     const updated = (await updateSurvey(id, patch))!;
