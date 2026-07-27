@@ -43,11 +43,32 @@ Then open http://localhost:3000.
 | `ANTHROPIC_MODEL` | Defaults to `claude-opus-5`. |
 | `MOVEMAN_DATA_DIR` | Where the SQLite database and video files are written. Defaults to `./data`. |
 | `NEXT_PUBLIC_BASE_URL` | Used to build customer capture links. Falls back to the request's own host. |
+| `TRANSCRIPTION_API_KEY` | Enables server-side transcription of narration. Strongly recommended — see below. |
+| `TRANSCRIPTION_API_URL` | Defaults to OpenAI. Any Whisper-compatible endpoint works. |
+| `TRANSCRIPTION_MODEL` | Defaults to `whisper-1`. |
 
 ```bash
-npm test        # 38 tests over the estimating engine
+npm test        # 51 tests over the estimating engine and transcript handling
 npm run build   # production build + type check
 ```
+
+### Transcription
+
+What the customer says is the highest-signal part of a survey — it's what tells you an item
+is staying behind, or that they want the kitchen packed. The browser transcribes live while
+they record, but only some browsers support that (Firefox doesn't at all), so a share of
+surveys would otherwise arrive with no narration at all.
+
+With `TRANSCRIPTION_API_KEY` set, the surveyor can transcribe any recording after the fact,
+and analysis does it automatically when a survey has no transcript. The audio is extracted
+from the video **in the browser**, downmixed to 16 kHz mono and split into eight-minute
+chunks — about a fortieth of the video's size — so the server still never decodes media and
+long surveys stay inside the 25 MB limit transcription APIs impose. Chunks overlap by two
+seconds and the results are stitched back together on the word overlap, so nothing is lost
+at a seam.
+
+It speaks the OpenAI audio-transcriptions API shape, which OpenAI, Groq and self-hosted
+whisper.cpp servers all implement — point `TRANSCRIPTION_API_URL` wherever you like.
 
 ### Without an API key
 
@@ -117,9 +138,14 @@ src/app/api/          surveys, capture, video streaming, analysis
 tests/                38 tests over the estimating engine
 ```
 
-Video frames are extracted in the browser with a canvas, so there is no ffmpeg dependency
-and the server never decodes video — it only stores bytes and forwards frames. Video is
-served with HTTP range support so the surveyor can scrub rather than wait for a download.
+Video frames are extracted in the browser with a canvas, and audio with the Web Audio API,
+so there is no ffmpeg dependency and the server never decodes media — it only stores bytes
+and forwards frames or WAV chunks. Video is served with HTTP range support so the surveyor
+can scrub rather than wait for a download.
+
+The capture page holds a screen wake lock while recording, so a phone that would otherwise
+sleep mid-walkthrough doesn't stop the recorder. The lock is re-taken whenever the page
+becomes visible again, and a browser that refuses it just records as before.
 
 ## Before this goes near a customer
 

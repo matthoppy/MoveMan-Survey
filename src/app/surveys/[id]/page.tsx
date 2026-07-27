@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getSurvey } from "@/lib/db";
 import { withSurveyEstimate } from "@/lib/survey-view";
 import { isAiConfigured } from "@/lib/analysis";
+import { isTranscriptionConfigured } from "@/lib/transcribe";
 import { SurveyWorkspace } from "./SurveyWorkspace";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ id: str
     <SurveyWorkspace
       initialSurvey={withSurveyEstimate(survey)}
       aiConfigured={isAiConfigured()}
+      transcriptionConfigured={isTranscriptionConfigured()}
       captureBaseUrl={baseUrl}
     />
   );

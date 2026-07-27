@@ -15,10 +15,12 @@ type Tab = "survey" | "job" | "transcript";
 export function SurveyWorkspace({
   initialSurvey,
   aiConfigured,
+  transcriptionConfigured,
   captureBaseUrl,
 }: {
   initialSurvey: SurveyView;
   aiConfigured: boolean;
+  transcriptionConfigured: boolean;
   captureBaseUrl: string;
 }) {
   const [survey, setSurvey] = useState(initialSurvey);
@@ -196,7 +198,12 @@ export function SurveyWorkspace({
 
           {tab === "survey" && (
             <>
-              <VideoPanel survey={survey} onSurveyChange={setSurvey} aiConfigured={aiConfigured} />
+              <VideoPanel
+                survey={survey}
+                onSurveyChange={setSurvey}
+                aiConfigured={aiConfigured}
+                transcriptionConfigured={transcriptionConfigured}
+              />
               <InventoryTable
                 items={survey.items}
                 rooms={survey.rooms}

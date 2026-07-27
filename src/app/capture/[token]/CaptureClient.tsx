@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { baseMimeType, pickRecorderMimeType, uploadBlob } from "@/lib/client/upload";
 import { isSpeechSupported, startTranscribing, type TranscriberHandle } from "@/lib/client/speech";
+import { keepScreenAwake, type WakeLockHandle } from "@/lib/client/wakelock";
 
 type Stage = "intro" | "recording" | "uploading" | "done";
 
@@ -42,6 +43,7 @@ export function CaptureClient({
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const transcriberRef = useRef<TranscriberHandle | null>(null);
+  const wakeLockRef = useRef<WakeLockHandle | null>(null);
   const videoIdRef = useRef<string | null>(null);
   const uploadChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const mimeRef = useRef<string>("video/webm");
@@ -54,6 +56,8 @@ export function CaptureClient({
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    wakeLockRef.current?.release();
+    wakeLockRef.current = null;
   }, []);
 
   useEffect(() => cleanupStream, [cleanupStream]);
@@ -140,6 +144,8 @@ export function CaptureClient({
       };
 
       recorder.start(CHUNK_MS);
+      // A phone that sleeps mid-walkthrough stops the recorder.
+      wakeLockRef.current = keepScreenAwake();
       startedAtRef.current = Date.now();
       setElapsed(0);
       setStage("recording");

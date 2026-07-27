@@ -2,20 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 import { extractFrames } from "@/lib/client/frames";
+import { transcribeVideo } from "@/lib/client/transcribe";
 import { baseMimeType, uploadBlob } from "@/lib/client/upload";
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
 import type { SurveyView } from "@/lib/survey-view";
 
-type Phase = "idle" | "uploading" | "extracting" | "analysing";
+type Phase = "idle" | "uploading" | "extracting" | "transcribing" | "analysing";
 
 export function VideoPanel({
   survey,
   onSurveyChange,
   aiConfigured,
+  transcriptionConfigured,
 }: {
   survey: SurveyView;
   onSurveyChange: (survey: SurveyView) => void;
   aiConfigured: boolean;
+  transcriptionConfigured: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(survey.videos[0]?.id ?? null);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -24,6 +27,7 @@ export function VideoPanel({
   const [error, setError] = useState<string | null>(null);
   const [keepManual, setKeepManual] = useState(true);
   const [applyAccess, setApplyAccess] = useState(true);
+  const [chunkProgress, setChunkProgress] = useState<{ done: number; total: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -61,6 +65,56 @@ export function VideoPanel({
     }
   }
 
+  /**
+   * Extracts the narration from the video and stores it against the survey.
+   * Returns the transcript so the analysis can use it straight away rather
+   * than waiting for the survey to round-trip.
+   */
+  async function runTranscription(videoId: string): Promise<string> {
+    setPhase("transcribing");
+    setChunkProgress(null);
+
+    const result = await transcribeVideo({
+      surveyId: survey.id,
+      videoId,
+      onProgress: (p) =>
+        setChunkProgress(p.totalChunks > 0 ? { done: p.chunk, total: p.totalChunks } : null),
+    });
+
+    if (result.silent || !result.transcript) return "";
+
+    const response = await fetch(`/api/surveys/${survey.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ transcript: result.transcript }),
+    });
+    const data = await response.json();
+    if (response.ok) onSurveyChange(data.survey);
+
+    return result.transcript;
+  }
+
+  async function handleTranscribe() {
+    if (!selected) return;
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      const transcript = await runTranscription(selected.id);
+      setMessage(
+        transcript
+          ? `Narration transcribed — ${transcript.split(/\s+/).length} words. Check it on the Transcript tab, then analyse.`
+          : "No speech was found on this recording. The customer may have filmed without narrating.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Transcription failed");
+    } finally {
+      setPhase("idle");
+      setChunkProgress(null);
+    }
+  }
+
   async function handleAnalyse() {
     if (!selected) return;
 
@@ -69,6 +123,13 @@ export function VideoPanel({
     setProgress(0);
 
     try {
+      // A survey with no narration loses most of its signal — what is staying
+      // behind, who is packing — so transcribe first if we can.
+      let transcript = survey.transcript;
+      if (!transcript.trim() && transcriptionConfigured) {
+        transcript = await runTranscription(selected.id);
+      }
+
       setPhase("extracting");
       const { frames, durationSec } = await extractFrames(`/api/videos/${selected.id}`, {
         count: 20,
@@ -86,6 +147,7 @@ export function VideoPanel({
         body: JSON.stringify({
           frames,
           durationSec,
+          transcript: transcript || undefined,
           keepManualItems: keepManual,
           applyAccessSuggestion: applyAccess,
         }),
@@ -106,6 +168,7 @@ export function VideoPanel({
     } finally {
       setPhase("idle");
       setProgress(0);
+      setChunkProgress(null);
     }
   }
 
@@ -194,6 +257,10 @@ export function VideoPanel({
             <span className="tiny muted">
               {phase === "uploading" && "Uploading video…"}
               {phase === "extracting" && `Reading frames from the video… ${Math.round(progress * 100)}%`}
+              {phase === "transcribing" &&
+                (chunkProgress
+                  ? `Transcribing narration — part ${chunkProgress.done} of ${chunkProgress.total}…`
+                  : "Extracting the audio from the recording…")}
               {phase === "analysing" && "Working through the survey — this takes up to a minute."}
             </span>
           </div>
@@ -223,10 +290,23 @@ export function VideoPanel({
               {survey.analysedAt ? "Re-analyse video" : "Analyse video"}
             </button>
 
+            {transcriptionConfigured && (
+              <button className="btn btn-block" onClick={handleTranscribe} disabled={busy || !selected}>
+                {survey.transcript.trim() ? "Re-transcribe narration" : "Transcribe narration only"}
+              </button>
+            )}
+
             {!aiConfigured && (
               <p className="hint">
                 No <code>ANTHROPIC_API_KEY</code> is set, so this will fall back to reading the narration
                 transcript only.
+              </p>
+            )}
+
+            {!transcriptionConfigured && !survey.transcript.trim() && (
+              <p className="hint">
+                No narration transcript. The browser only captures speech live on some browsers — set{" "}
+                <code>TRANSCRIPTION_API_KEY</code> to transcribe the audio from any recording.
               </p>
             )}
           </>
