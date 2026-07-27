@@ -1,4 +1,4 @@
-# MoveMan Survey
+# Removals Survey
 
 Video surveying for removals companies. The customer films a walkthrough of their house
 on their phone — talking as they go — and the app turns that into a room-by-room
@@ -41,7 +41,7 @@ Then open http://localhost:3000.
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Enables AI video analysis. Without it the app falls back to reading the narration transcript only. |
 | `ANTHROPIC_MODEL` | Defaults to `claude-opus-5`. |
-| `MOVEMAN_DATA_DIR` | Where the SQLite database and video files are written. Defaults to `./data`. |
+| `REMOVALS_SURVEY_DATA_DIR` | Where the SQLite database and video files are written. Defaults to `./data`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Set these three to switch to Postgres, accounts and object storage. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser-safe key, used for signing in. |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Optional.** Only needed to store video in Supabase Storage; the request path never uses it. |

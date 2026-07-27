@@ -1,4 +1,4 @@
--- MoveMan Survey — initial schema.
+-- Removals Survey — initial schema.
 --
 -- Multi-tenant from the start: every survey belongs to a removals company, and
 -- row-level security means a surveyor can only ever see their own company's

@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "MoveMan Survey",
-    short_name: "MoveMan",
+    name: "Removals Survey",
+    short_name: "Removals",
     description: "Video surveys for removals companies.",
     start_url: "/",
     display: "standalone",

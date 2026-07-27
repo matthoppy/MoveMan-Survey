@@ -5,7 +5,7 @@ import { SignOutButton } from "@/components/SignOutButton";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MoveMan Survey",
+  title: "Removals Survey",
   description: "Video surveys for removals companies — inventory, materials and crew from a walkthrough video.",
 };
 
@@ -22,8 +22,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <header className="app-header no-print">
           <div className="app-header-inner">
             <Link href="/" className="brand">
-              <span className="brand-mark">MM</span>
-              MoveMan Survey
+              <span className="brand-mark">RS</span>
+              Removals Survey
             </Link>
             <div className="grow" />
             <Link href="/surveys/new" className="btn btn-primary btn-sm">
