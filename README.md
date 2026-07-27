@@ -44,7 +44,7 @@ Then open http://localhost:3000.
 | `MOVEMAN_DATA_DIR` | Where the SQLite database and video files are written. Defaults to `./data`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Set these three to switch to Postgres, accounts and object storage. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser-safe key, used for signing in. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Bypasses row-level security — never expose it. |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Optional.** Only needed to store video in Supabase Storage; the request path never uses it. |
 | `NEXT_PUBLIC_BASE_URL` | Used to build customer capture links. Falls back to the request's own host. |
 | `TRANSCRIPTION_API_KEY` | Enables server-side transcription of narration. Strongly recommended — see below. |
 | `TRANSCRIPTION_API_URL` | Defaults to OpenAI. Any Whisper-compatible endpoint works. |
@@ -65,9 +65,9 @@ the routes never learn which one they're talking to.
 
 To set it up:
 
-1. Create a Supabase project and apply the migrations in `supabase/migrations/` in order —
-   `0001_init.sql` builds the schema and row-level security, `0002_storage.sql` creates the
-   private video bucket.
+1. Create a Supabase project and apply everything in `supabase/migrations/` in order.
+   `0001` builds the schema and row-level security, `0002` the private video bucket, `0003`
+   the capture-link functions, `0004` the video policies, `0005` the API-surface hardening.
 2. Create your company and attach yourself to it:
 
    ```sql
@@ -84,10 +84,21 @@ To set it up:
 **How access control works.** Every survey belongs to a company, and row-level security
 restricts reads and writes to the company of the signed-in user. Middleware redirects
 signed-out users to `/login` — except on the customer capture routes, which must stay open
-because someone filming their house has no account. Those routes authenticate on the
-survey's unguessable capture token instead and are served with the service role, and the
-one test file you should never delete is `tests/auth-paths.test.ts`, which pins exactly
-which paths are public.
+because someone filming their house has no account. The one test file you should never
+delete is `tests/auth-paths.test.ts`, which pins exactly which paths are public.
+
+**The capture link never uses the service role.** The obvious way to serve a route with no
+session is to give the app the service-role key, but that hands a credential which bypasses
+row-level security entirely to the one route anybody on the internet can reach with a
+guessed URL. Instead the token is checked *inside the database*: three `security definer`
+functions (`survey_by_capture_token`, `capture_set_transcript`, `capture_upsert_video`) are
+granted to the anonymous role, and each resolves exactly one survey by its token and can
+touch nothing else. The whole request path — office and customer alike — runs on the
+publishable key.
+
+Supabase's database linter will flag those three functions as "public can execute security
+definer function". That is expected and reviewed: it is the design, and the alternative is
+strictly worse. Everything else the linter flagged has been fixed in `0005`.
 
 **How video storage works.** Chunks are staged on local disk while the customer is still
 filming — that's what makes a flat battery mid-survey survivable — and the finished file is
@@ -200,10 +211,13 @@ becomes visible again, and a browser that refuses it just records as before.
 - **Run it on Supabase, not the local driver.** Without the Supabase keys there are no
   accounts and no isolation: anyone who reaches the app sees every survey, and the database
   is a file on disk that can't scale past one instance. See the setup above.
-- **The Supabase path has not been exercised against a live project.** The schema, policies,
-  drivers and auth are written and the access-control logic is tested, but no query has run
-  against a real Postgres. Apply the migrations to a scratch project and walk one survey
-  end to end before trusting it.
+- **Turn on leaked-password protection.** Supabase can check new passwords against
+  HaveIBeenPwned; it is off by default. One toggle in Auth settings, and worth it for an
+  app holding footage of customers' homes.
+- **Video storage still needs the service-role key.** Without it the app keeps videos on
+  local disk even when the database is Supabase — which works, but doesn't survive a
+  redeploy on ephemeral infrastructure. Add `SUPABASE_SERVICE_ROLE_KEY` to move them into
+  the private bucket. This is the only part of the system that key is used for.
 - **No pricing.** The app produces volume, materials, crew, vehicles and hours. Your rate
   card turns that into money, and that's deliberately not baked in.
 - **Live video is one-way.** The customer records and it streams to the server as they go.

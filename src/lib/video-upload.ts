@@ -1,4 +1,11 @@
-import { createVideo, getVideo, updateVideo, updateSurvey } from "./db";
+import {
+  createVideo,
+  getVideo,
+  getVideoByToken,
+  updateVideo,
+  updateSurvey,
+  upsertVideoByToken,
+} from "./db";
 import { getStorage } from "./storage";
 import type { CaptureMode, SurveyRecord, VideoRecord } from "./types";
 
@@ -30,6 +37,12 @@ export interface UploadOptions {
   videoId?: string | null;
   /** False while a live capture is still streaming. */
   complete: boolean;
+  /**
+   * Set when the upload arrived through a customer capture link. The write is
+   * then authorised by the token inside the database rather than by a session,
+   * so the customer-facing path needs no privileged credentials at all.
+   */
+  captureToken?: string;
 }
 
 /**
@@ -41,45 +54,74 @@ export interface UploadOptions {
  * is already safe if the client's phone dies halfway round the house.
  */
 export async function storeUpload(options: UploadOptions): Promise<VideoRecord> {
-  const { survey, body, mimeType, mode, durationSec, videoId, complete } = options;
+  const { survey, body, mimeType, mode, durationSec, videoId, complete, captureToken } = options;
 
-  let video = videoId ? await getVideo(videoId) : null;
-  if (video && video.surveyId !== survey.id) {
-    throw new Error("That recording belongs to a different survey.");
+  const appending = Boolean(videoId);
+  const filename = videoId
+    ? (await resolveFilename(videoId, survey.id, captureToken))
+    : `${survey.id}-${Date.now()}.${extensionFor(mimeType)}`;
+
+  const storage = getStorage();
+  let sizeBytes = await storage.writeChunk(filename, body, appending);
+  if (complete) sizeBytes = await storage.finalize(filename, mimeType);
+
+  if (captureToken) {
+    return upsertVideoByToken(captureToken, {
+      videoId: videoId ?? null,
+      filename,
+      mimeType,
+      sizeBytes,
+      durationSec,
+      mode,
+      complete,
+    });
   }
 
-  const appending = Boolean(video);
+  let video = videoId ? await getVideo(videoId) : null;
   if (!video) {
-    const filename = `${survey.id}-${Date.now()}.${extensionFor(mimeType)}`;
     video = await createVideo({
       surveyId: survey.id,
       filename,
       mimeType,
-      sizeBytes: 0,
+      sizeBytes,
       durationSec,
       mode,
-      complete: false,
+      complete,
     });
+  } else {
+    video = (await updateVideo(video.id, {
+      sizeBytes,
+      durationSec: durationSec ?? video.durationSec,
+      complete,
+    }))!;
   }
-
-  const storage = getStorage();
-  let sizeBytes = await storage.writeChunk(video.filename, body, appending);
-
-  if (complete) {
-    sizeBytes = await storage.finalize(video.filename, mimeType);
-  }
-
-  const updated = (await updateVideo(video.id, {
-    sizeBytes,
-    durationSec: durationSec ?? video.durationSec,
-    complete,
-  }))!;
 
   if (complete && survey.status === "awaiting_video") {
     await updateSurvey(survey.id, { status: "video_received" });
   }
 
-  return updated;
+  return video;
+}
+
+/**
+ * The filename of a recording already in progress. Checked against the survey
+ * so a stray video id cannot be used to append to somebody else's recording.
+ */
+async function resolveFilename(
+  videoId: string,
+  surveyId: string,
+  captureToken: string | undefined,
+): Promise<string> {
+  // A capture link has no session, so the lookup is scoped by its token; the
+  // office side goes through row-level security as usual.
+  const existing = captureToken
+    ? await getVideoByToken(captureToken, videoId)
+    : await getVideo(videoId);
+
+  if (!existing || existing.surveyId !== surveyId) {
+    throw new Error("That recording belongs to a different survey.");
+  }
+  return existing.filename;
 }
 
 export async function deleteVideoFile(video: VideoRecord): Promise<void> {

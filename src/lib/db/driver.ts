@@ -25,6 +25,17 @@ export interface CreateVideoInput {
   complete?: boolean;
 }
 
+export interface UpsertCaptureVideoInput {
+  /** Null starts a new recording; set to append to one already in progress. */
+  videoId: string | null;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  durationSec: number | null;
+  mode: CaptureMode;
+  complete: boolean;
+}
+
 export interface UpdateVideoInput {
   sizeBytes?: number;
   durationSec?: number | null;
@@ -48,6 +59,16 @@ export interface DatabaseDriver {
   listSurveys(): Promise<SurveyRecord[]>;
   updateSurvey(id: string, patch: Partial<SurveyRecord>): Promise<SurveyRecord | null>;
   deleteSurvey(id: string): Promise<void>;
+
+  /**
+   * Capture-link operations, authorised by the survey's token rather than by a
+   * session. The customer filming has no account, so these must work for an
+   * anonymous caller — and must never be able to reach beyond the one survey
+   * the token belongs to.
+   */
+  setTranscriptByToken(token: string, text: string, append: boolean): Promise<void>;
+  upsertVideoByToken(token: string, input: UpsertCaptureVideoInput): Promise<VideoRecord>;
+  getVideoByToken(token: string, videoId: string): Promise<VideoRecord | null>;
 
   createVideo(input: CreateVideoInput): Promise<VideoRecord>;
   getVideo(id: string): Promise<VideoRecord | null>;

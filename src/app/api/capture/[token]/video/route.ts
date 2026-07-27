@@ -50,6 +50,7 @@ export async function POST(request: Request, { params }: Params) {
       durationSec: Number.isFinite(durationSec) && durationSec! > 0 ? durationSec : null,
       videoId,
       complete,
+      captureToken: token,
     });
     return NextResponse.json({ video });
   } catch (error) {

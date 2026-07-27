@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { serviceClient, userClient, currentCompanyId } from "../supabase/server";
+import { userClient, currentCompanyId } from "../supabase/server";
 import { newCaptureToken, newReference } from "../ids";
 import {
   DEFAULT_ACCESS,
@@ -123,6 +123,14 @@ async function asUser(): Promise<SupabaseClient> {
   return (await userClient()) as unknown as SupabaseClient;
 }
 
+/**
+ * The public key, used for the capture link. Carries no privileges of its own —
+ * everything it can do is defined by the three capture functions it is granted.
+ */
+async function asAnon(): Promise<SupabaseClient> {
+  return (await userClient()) as unknown as SupabaseClient;
+}
+
 export const supabaseDriver: DatabaseDriver = {
   name: "supabase",
 
@@ -164,10 +172,57 @@ export const supabaseDriver: DatabaseDriver = {
   },
 
   async getSurveyByToken(token) {
-    // The capture link has no session behind it — the token is the credential,
-    // so this deliberately runs with the service role.
-    const { data } = await serviceClient().from("surveys").select().eq("capture_token", token).maybeSingle();
-    return data ? toSurvey(data as SurveyRow) : null;
+    // The capture link has no session behind it. Rather than reaching for the
+    // service role — which would bypass row-level security on the one route
+    // anyone on the internet can hit — the token is checked inside the
+    // database by a security-definer function scoped to a single survey.
+    const client = await asAnon();
+    const { data, error } = await client.rpc("survey_by_capture_token", { p_token: token });
+    if (error) throw new Error(`Could not open that capture link: ${error.message}`);
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return row ? toSurvey(row as SurveyRow) : null;
+  },
+
+  async setTranscriptByToken(token, text, append) {
+    const client = await asAnon();
+    const { error } = await client.rpc("capture_set_transcript", {
+      p_token: token,
+      p_text: text,
+      p_append: append,
+    });
+    if (error) throw new Error(`Could not save the narration: ${error.message}`);
+  },
+
+  async upsertVideoByToken(token, input) {
+    const client = await asAnon();
+    const { data, error } = await client.rpc("capture_upsert_video", {
+      p_token: token,
+      p_video_id: input.videoId,
+      p_filename: input.filename,
+      p_mime_type: input.mimeType,
+      p_size_bytes: input.sizeBytes,
+      p_duration_sec: input.durationSec,
+      p_mode: input.mode,
+      p_complete: input.complete,
+    });
+
+    if (error) throw new Error(`Could not save the recording: ${error.message}`);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) throw new Error("The recording could not be saved.");
+    return toVideo(row as VideoRow);
+  },
+
+  async getVideoByToken(token, videoId) {
+    const client = await asAnon();
+    const { data, error } = await client.rpc("capture_video_by_id", {
+      p_token: token,
+      p_video_id: videoId,
+    });
+    if (error) throw new Error(`Could not find that recording: ${error.message}`);
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return row ? toVideo(row as VideoRow) : null;
   },
 
   async listSurveys() {
@@ -183,9 +238,9 @@ export const supabaseDriver: DatabaseDriver = {
       if (column && value !== undefined) payload[column] = value;
     }
 
-    // Capture pages update surveys with no session, so those writes have to go
-    // through the service role; everything else stays under the user's session.
-    const client = (await hasSession()) ? await asUser() : serviceClient();
+    // Capture-link writes go through the token-scoped functions above, so this
+    // only ever runs for a signed-in surveyor, under row-level security.
+    const client = await asUser();
 
     const { data, error } = await client.from("surveys").update(payload).eq("id", id).select().maybeSingle();
     if (error) throw new Error(`Could not save the survey: ${error.message}`);
@@ -199,7 +254,8 @@ export const supabaseDriver: DatabaseDriver = {
   },
 
   async createVideo(input: CreateVideoInput) {
-    const { data, error } = await serviceClient()
+    const client = await asUser();
+    const { data, error } = await client
       .from("videos")
       .insert({
         survey_id: input.surveyId,
@@ -218,12 +274,14 @@ export const supabaseDriver: DatabaseDriver = {
   },
 
   async getVideo(id) {
-    const { data } = await serviceClient().from("videos").select().eq("id", id).maybeSingle();
+    const client = await asUser();
+    const { data } = await client.from("videos").select().eq("id", id).maybeSingle();
     return data ? toVideo(data as VideoRow) : null;
   },
 
   async listVideos(surveyId) {
-    const { data } = await serviceClient()
+    const client = await asUser();
+    const { data } = await client
       .from("videos")
       .select()
       .eq("survey_id", surveyId)
@@ -238,7 +296,8 @@ export const supabaseDriver: DatabaseDriver = {
     if (patch.complete !== undefined) payload.complete = patch.complete;
     if (Object.keys(payload).length === 0) return supabaseDriver.getVideo(id);
 
-    const { data, error } = await serviceClient()
+    const client = await asUser();
+    const { data, error } = await client
       .from("videos")
       .update(payload)
       .eq("id", id)
@@ -250,16 +309,7 @@ export const supabaseDriver: DatabaseDriver = {
   },
 
   async deleteVideo(id) {
-    await serviceClient().from("videos").delete().eq("id", id);
+    const client = await asUser();
+    await client.from("videos").delete().eq("id", id);
   },
 };
-
-async function hasSession(): Promise<boolean> {
-  try {
-    const client = await userClient();
-    const { data } = await client.auth.getUser();
-    return Boolean(data.user);
-  } catch {
-    return false;
-  }
-}

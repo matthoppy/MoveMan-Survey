@@ -354,6 +354,55 @@ export const sqliteDriver: DatabaseDriver = {
     deleteSurvey(id);
   },
 
+  async setTranscriptByToken(token, text, append) {
+    const survey = getSurveyByToken(token);
+    if (!survey) throw new Error("unknown capture token");
+    const transcript = append ? `${survey.transcript}${survey.transcript ? " " : ""}${text}`.trim() : text;
+    updateSurvey(survey.id, { transcript });
+  },
+
+  async upsertVideoByToken(token, input) {
+    const survey = getSurveyByToken(token);
+    if (!survey) throw new Error("unknown capture token");
+
+    if (input.videoId) {
+      const existing = getVideo(input.videoId);
+      if (!existing || existing.surveyId !== survey.id) {
+        throw new Error("That recording belongs to a different survey.");
+      }
+      const updated = updateVideo(input.videoId, {
+        sizeBytes: input.sizeBytes,
+        durationSec: input.durationSec ?? existing.durationSec,
+        complete: input.complete,
+      })!;
+      if (input.complete && survey.status === "awaiting_video") {
+        updateSurvey(survey.id, { status: "video_received" });
+      }
+      return updated;
+    }
+
+    const created = createVideo({
+      surveyId: survey.id,
+      filename: input.filename,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      durationSec: input.durationSec,
+      mode: input.mode,
+      complete: input.complete,
+    });
+    if (input.complete && survey.status === "awaiting_video") {
+      updateSurvey(survey.id, { status: "video_received" });
+    }
+    return created;
+  },
+
+  async getVideoByToken(token, videoId) {
+    const survey = getSurveyByToken(token);
+    if (!survey) return null;
+    const video = getVideo(videoId);
+    return video && video.surveyId === survey.id ? video : null;
+  },
+
   async createVideo(input) {
     return createVideo(input);
   },

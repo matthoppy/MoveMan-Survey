@@ -45,6 +45,14 @@ export const updateSurvey: DatabaseDriver["updateSurvey"] = (id, patch) =>
   getDriver().updateSurvey(id, patch);
 export const deleteSurvey: DatabaseDriver["deleteSurvey"] = (id) => getDriver().deleteSurvey(id);
 
+export const setTranscriptByToken: DatabaseDriver["setTranscriptByToken"] = (token, text, append) =>
+  getDriver().setTranscriptByToken(token, text, append);
+export const upsertVideoByToken: DatabaseDriver["upsertVideoByToken"] = (token, input) =>
+  getDriver().upsertVideoByToken(token, input);
+
+export const getVideoByToken: DatabaseDriver["getVideoByToken"] = (token, videoId) =>
+  getDriver().getVideoByToken(token, videoId);
+
 export const createVideo: DatabaseDriver["createVideo"] = (input) => getDriver().createVideo(input);
 export const getVideo: DatabaseDriver["getVideo"] = (id) => getDriver().getVideo(id);
 export const listVideos: DatabaseDriver["listVideos"] = (surveyId) => getDriver().listVideos(surveyId);

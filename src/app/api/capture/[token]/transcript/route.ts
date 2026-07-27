@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSurveyByToken, updateSurvey } from "@/lib/db";
+import { getSurveyByToken, setTranscriptByToken } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +25,6 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid transcript payload" }, { status: 400 });
   }
 
-  const transcript = parsed.data.append
-    ? `${survey.transcript}${survey.transcript ? " " : ""}${parsed.data.transcript}`.trim()
-    : parsed.data.transcript;
-
-  await updateSurvey(survey.id, { transcript });
-  return NextResponse.json({ ok: true, length: transcript.length });
+  await setTranscriptByToken(token, parsed.data.transcript, parsed.data.append ?? false);
+  return NextResponse.json({ ok: true });
 }
