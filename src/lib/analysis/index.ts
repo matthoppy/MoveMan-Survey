@@ -34,7 +34,11 @@ export async function analyseSurvey(input: AnalyseInput): Promise<AnalyseResult>
     return { ...normaliseAnalysis(raw), model: null, accessSuggestion: null, offline: true };
   }
 
-  const model = process.env.ANTHROPIC_MODEL || "claude-opus-5";
+  // Sonnet reads a walkthrough well at roughly half the cost of Opus, so it is
+  // the default. Set ANTHROPIC_MODEL to claude-opus-5 if it starts missing
+  // items in cluttered rooms — every survey records the model that produced
+  // it, so the two can be compared on the same recording.
+  const model = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const frames = input.frames.slice(0, MAX_FRAMES);

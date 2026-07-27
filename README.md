@@ -16,7 +16,9 @@ halfway round the house costs you the last five seconds rather than the whole su
 narration is transcribed live in the browser where it's supported.
 
 **Analysis.** Keyframes are sampled from the video in the browser and sent, with the
-narration transcript, to Claude acting as a surveyor. It returns a room-by-room inventory
+narration transcript, to Claude acting as a surveyor. Sonnet is the default; each survey
+records the model that produced it, so you can re-analyse the same recording on Opus and
+compare the two inventories side by side before deciding what to run. It returns a room-by-room inventory
 with quantities, who is packing each room, access observations, and — importantly — a list
 of things it could not determine and a human must confirm.
 
@@ -40,7 +42,7 @@ Then open http://localhost:3000.
 | Variable | Purpose |
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Enables AI video analysis. Without it the app falls back to reading the narration transcript only. |
-| `ANTHROPIC_MODEL` | Defaults to `claude-opus-5`. |
+| `ANTHROPIC_MODEL` | Defaults to `claude-sonnet-5`. Set `claude-opus-5` for the harder tier. |
 | `REMOVALS_SURVEY_DATA_DIR` | Where the SQLite database and video files are written. Defaults to `./data`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Set these three to switch to Postgres, accounts and object storage. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser-safe key, used for signing in. |
