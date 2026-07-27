@@ -1,9 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
-import { videoDir } from "./paths";
 import { createVideo, getVideo, updateVideo, updateSurvey } from "./db";
+import { getStorage } from "./storage";
 import type { CaptureMode, SurveyRecord, VideoRecord } from "./types";
 
 const EXTENSION_FOR: Record<string, string> = {
@@ -37,17 +33,17 @@ export interface UploadOptions {
 }
 
 /**
- * Write an upload to disk, streaming it rather than buffering — survey videos
- * routinely run to hundreds of megabytes.
+ * Write an upload to storage, streaming it rather than buffering — survey
+ * videos routinely run to hundreds of megabytes.
  *
  * Passing an existing `videoId` appends, which is how live capture works: the
  * browser posts each MediaRecorder chunk as it is produced, so the recording
- * is already safe on disk if the client's phone dies halfway round the house.
+ * is already safe if the client's phone dies halfway round the house.
  */
 export async function storeUpload(options: UploadOptions): Promise<VideoRecord> {
   const { survey, body, mimeType, mode, durationSec, videoId, complete } = options;
 
-  let video = videoId ? getVideo(videoId) : null;
+  let video = videoId ? await getVideo(videoId) : null;
   if (video && video.surveyId !== survey.id) {
     throw new Error("That recording belongs to a different survey.");
   }
@@ -55,7 +51,7 @@ export async function storeUpload(options: UploadOptions): Promise<VideoRecord> 
   const appending = Boolean(video);
   if (!video) {
     const filename = `${survey.id}-${Date.now()}.${extensionFor(mimeType)}`;
-    video = createVideo({
+    video = await createVideo({
       surveyId: survey.id,
       filename,
       mimeType,
@@ -66,32 +62,26 @@ export async function storeUpload(options: UploadOptions): Promise<VideoRecord> 
     });
   }
 
-  const target = path.join(videoDir(), video.filename);
+  const storage = getStorage();
+  let sizeBytes = await storage.writeChunk(video.filename, body, appending);
 
-  if (body) {
-    const out = fs.createWriteStream(target, { flags: appending ? "a" : "w" });
-    await pipeline(Readable.fromWeb(body as Parameters<typeof Readable.fromWeb>[0]), out);
+  if (complete) {
+    sizeBytes = await storage.finalize(video.filename, mimeType);
   }
 
-  const sizeBytes = fs.existsSync(target) ? fs.statSync(target).size : 0;
-  const updated = updateVideo(video.id, {
+  const updated = (await updateVideo(video.id, {
     sizeBytes,
     durationSec: durationSec ?? video.durationSec,
     complete,
-  })!;
+  }))!;
 
   if (complete && survey.status === "awaiting_video") {
-    updateSurvey(survey.id, { status: "video_received" });
+    await updateSurvey(survey.id, { status: "video_received" });
   }
 
   return updated;
 }
 
-export function videoPath(video: VideoRecord): string {
-  return path.join(videoDir(), video.filename);
-}
-
-export function deleteVideoFile(video: VideoRecord): void {
-  const target = videoPath(video);
-  if (fs.existsSync(target)) fs.rmSync(target);
+export async function deleteVideoFile(video: VideoRecord): Promise<void> {
+  await getStorage().remove(video.filename);
 }

@@ -42,15 +42,60 @@ Then open http://localhost:3000.
 | `ANTHROPIC_API_KEY` | Enables AI video analysis. Without it the app falls back to reading the narration transcript only. |
 | `ANTHROPIC_MODEL` | Defaults to `claude-opus-5`. |
 | `MOVEMAN_DATA_DIR` | Where the SQLite database and video files are written. Defaults to `./data`. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Set these three to switch to Postgres, accounts and object storage. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser-safe key, used for signing in. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only. Bypasses row-level security — never expose it. |
 | `NEXT_PUBLIC_BASE_URL` | Used to build customer capture links. Falls back to the request's own host. |
 | `TRANSCRIPTION_API_KEY` | Enables server-side transcription of narration. Strongly recommended — see below. |
 | `TRANSCRIPTION_API_URL` | Defaults to OpenAI. Any Whisper-compatible endpoint works. |
 | `TRANSCRIPTION_MODEL` | Defaults to `whisper-1`. |
 
 ```bash
-npm test        # 51 tests over the estimating engine and transcript handling
+npm test        # 56 tests over the estimating engine, transcripts and access control
 npm run build   # production build + type check
 ```
+
+## Running it on Supabase
+
+With no Supabase keys the app uses local SQLite and local disk, has no accounts, and is
+wide open — fine for `npm run dev`, not for anything real. Set the three Supabase variables
+and it switches to Postgres, real accounts and object storage, with no code change: the
+database and storage sit behind driver interfaces (`src/lib/db/`, `src/lib/storage/`) and
+the routes never learn which one they're talking to.
+
+To set it up:
+
+1. Create a Supabase project and apply the migrations in `supabase/migrations/` in order —
+   `0001_init.sql` builds the schema and row-level security, `0002_storage.sql` creates the
+   private video bucket.
+2. Create your company and attach yourself to it:
+
+   ```sql
+   insert into companies (name) values ('Your Removals Ltd');
+   update profiles
+      set company_id = (select id from companies limit 1), role = 'admin'
+    where id = '<your auth user id>';
+   ```
+
+3. Add users through the Supabase dashboard and set each one's `company_id`. A new user
+   gets a profile row automatically but no company, so they see nothing until you assign
+   one — deliberately, so a half-finished invite can't read customer data.
+
+**How access control works.** Every survey belongs to a company, and row-level security
+restricts reads and writes to the company of the signed-in user. Middleware redirects
+signed-out users to `/login` — except on the customer capture routes, which must stay open
+because someone filming their house has no account. Those routes authenticate on the
+survey's unguessable capture token instead and are served with the service role, and the
+one test file you should never delete is `tests/auth-paths.test.ts`, which pins exactly
+which paths are public.
+
+**How video storage works.** Chunks are staged on local disk while the customer is still
+filming — that's what makes a flat battery mid-survey survivable — and the finished file is
+uploaded to a private bucket in one go, with the staging copy deleted. Playback hands the
+browser a one-hour signed URL, so video never passes back through the app. The trade-off is
+that the server needs transient disk for the length of an active recording; if you deploy
+somewhere without writable disk, drop the chunked capture path and accept whole-file uploads
+only.
 
 ### Transcription
 
@@ -135,7 +180,10 @@ src/lib/client/       browser-side frame extraction, speech capture, chunked upl
 src/app/capture/      the public page the customer uses
 src/app/surveys/      the surveyor's workspace
 src/app/api/          surveys, capture, video streaming, analysis
-tests/                38 tests over the estimating engine
+src/lib/db/           sqlite and supabase drivers behind one async interface
+src/lib/storage/      local disk and supabase object storage, same idea
+supabase/migrations/  schema, row-level security, private video bucket
+tests/                56 tests over estimating, transcripts and access control
 ```
 
 Video frames are extracted in the browser with a canvas, and audio with the Web Audio API,
@@ -149,12 +197,13 @@ becomes visible again, and a browser that refuses it just records as before.
 
 ## Before this goes near a customer
 
-- **There is no authentication.** Anyone who can reach the app can see every survey. Put it
-  behind SSO or an auth layer before it leaves your network. Customer capture links are
-  unguessable tokens, but the surveyor's side is wide open.
-- **Storage is local disk plus SQLite.** Fine for one office; move videos to S3 or R2 and
-  the database to Postgres before you run more than one instance. `src/lib/video-upload.ts`
-  and `src/lib/db.ts` are the two files that need to change.
+- **Run it on Supabase, not the local driver.** Without the Supabase keys there are no
+  accounts and no isolation: anyone who reaches the app sees every survey, and the database
+  is a file on disk that can't scale past one instance. See the setup above.
+- **The Supabase path has not been exercised against a live project.** The schema, policies,
+  drivers and auth are written and the access-control logic is tested, but no query has run
+  against a real Postgres. Apply the migrations to a scratch project and walk one survey
+  end to end before trusting it.
 - **No pricing.** The app produces volume, materials, crew, vehicles and hours. Your rate
   card turns that into money, and that's deliberately not baked in.
 - **Live video is one-way.** The customer records and it streams to the server as they go.

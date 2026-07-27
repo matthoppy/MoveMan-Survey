@@ -15,7 +15,7 @@ const schema = z.object({
 /** Stores the live speech-to-text captured while the customer narrates. */
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const survey = getSurveyByToken(token);
+  const survey = await getSurveyByToken(token);
   if (!survey) {
     return NextResponse.json({ error: "This survey link is not valid." }, { status: 404 });
   }
@@ -29,6 +29,6 @@ export async function POST(request: Request, { params }: Params) {
     ? `${survey.transcript}${survey.transcript ? " " : ""}${parsed.data.transcript}`.trim()
     : parsed.data.transcript;
 
-  updateSurvey(survey.id, { transcript });
+  await updateSurvey(survey.id, { transcript });
   return NextResponse.json({ ok: true, length: transcript.length });
 }

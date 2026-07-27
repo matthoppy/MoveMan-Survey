@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SurveyPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const survey = getSurvey(id);
+  const survey = await getSurvey(id);
   if (!survey) notFound();
 
   // Resolved on the server so the capture link renders identically on both
@@ -20,7 +20,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ id: str
 
   return (
     <SurveyWorkspace
-      initialSurvey={withSurveyEstimate(survey)}
+      initialSurvey={await withSurveyEstimate(survey)}
       aiConfigured={isAiConfigured()}
       transcriptionConfigured={isTranscriptionConfigured()}
       captureBaseUrl={baseUrl}

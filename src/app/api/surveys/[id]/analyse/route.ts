@@ -23,7 +23,7 @@ const schema = z.object({
 
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  const survey = getSurvey(id);
+  const survey = await getSurvey(id);
   if (!survey) return NextResponse.json({ error: "Survey not found" }, { status: 404 });
 
   const parsed = schema.safeParse(await request.json().catch(() => ({})));
@@ -41,7 +41,7 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  updateSurvey(id, { status: "analysing" });
+  await updateSurvey(id, { status: "analysing" });
 
   try {
     const result = await analyseSurvey({
@@ -78,15 +78,15 @@ export async function POST(request: Request, { params }: Params) {
       patch.origin = { ...survey.origin, ...result.accessSuggestion } as AccessDetails;
     }
 
-    const updated = updateSurvey(id, patch)!;
+    const updated = (await updateSurvey(id, patch))!;
 
     return NextResponse.json({
-      survey: withSurveyEstimate(updated),
+      survey: await withSurveyEstimate(updated),
       offline: result.offline,
       accessSuggestion: result.accessSuggestion,
     });
   } catch (error) {
-    updateSurvey(id, { status: "failed" });
+    await updateSurvey(id, { status: "failed" });
     const message = error instanceof Error ? error.message : "Analysis failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }

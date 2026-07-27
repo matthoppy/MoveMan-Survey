@@ -22,7 +22,7 @@ type Params = { params: Promise<{ token: string }> };
  */
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const survey = getSurveyByToken(token);
+  const survey = await getSurveyByToken(token);
   if (!survey) {
     return NextResponse.json({ error: "This survey link is not valid." }, { status: 404 });
   }

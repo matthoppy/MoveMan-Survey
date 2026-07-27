@@ -23,7 +23,7 @@ export async function GET() {
  */
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  if (!getSurvey(id)) {
+  if (!(await getSurvey(id))) {
     return NextResponse.json({ error: "Survey not found" }, { status: 404 });
   }
 

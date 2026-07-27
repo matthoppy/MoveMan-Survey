@@ -1,6 +1,12 @@
 import Database from "better-sqlite3";
-import { databasePath } from "./paths";
-import { newCaptureToken, newId, newReference } from "./ids";
+import type {
+  CreateSurveyInput,
+  CreateVideoInput,
+  DatabaseDriver,
+  UpdateVideoInput,
+} from "./driver";
+import { databasePath } from "../paths";
+import { newCaptureToken, newId, newReference } from "../ids";
 import {
   DEFAULT_ACCESS,
   DEFAULT_JOURNEY,
@@ -12,7 +18,7 @@ import {
   type SurveyRecord,
   type SurveyStatus,
   type VideoRecord,
-} from "./types";
+} from "../types";
 
 let db: Database.Database | null = null;
 
@@ -129,19 +135,6 @@ function toSurvey(row: SurveyRow): SurveyRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-export interface CreateSurveyInput {
-  clientName: string;
-  clientEmail?: string;
-  clientPhone?: string;
-  originAddress?: string;
-  destinationAddress?: string;
-  moveDate?: string | null;
-  origin?: AccessDetails;
-  destination?: AccessDetails;
-  journey?: JourneyDetails;
-  packingDayBefore?: boolean;
 }
 
 export function createSurvey(input: CreateSurveyInput): SurveyRecord {
@@ -275,15 +268,7 @@ function toVideo(row: VideoRow): VideoRecord {
   };
 }
 
-export function createVideo(input: {
-  surveyId: string;
-  filename: string;
-  mimeType: string;
-  sizeBytes: number;
-  durationSec?: number | null;
-  mode: CaptureMode;
-  complete?: boolean;
-}): VideoRecord {
+export function createVideo(input: CreateVideoInput): VideoRecord {
   const id = newId();
   getDb()
     .prepare(
@@ -316,10 +301,7 @@ export function listVideos(surveyId: string): VideoRecord[] {
   return rows.map(toVideo);
 }
 
-export function updateVideo(
-  id: string,
-  patch: { sizeBytes?: number; durationSec?: number | null; complete?: boolean },
-): VideoRecord | null {
+export function updateVideo(id: string, patch: UpdateVideoInput): VideoRecord | null {
   const sets: string[] = [];
   const params: Record<string, unknown> = { id };
   if (patch.sizeBytes !== undefined) {
@@ -339,3 +321,52 @@ export function updateVideo(
   getDb().prepare(`UPDATE videos SET ${sets.join(", ")} WHERE id = @id`).run(params);
   return getVideo(id);
 }
+
+export function deleteVideo(id: string): void {
+  getDb().prepare("DELETE FROM videos WHERE id = ?").run(id);
+}
+
+/**
+ * Local single-file driver.
+ *
+ * better-sqlite3 is synchronous, so every method here resolves immediately —
+ * the async signatures exist to match the contract, not because anything waits.
+ */
+export const sqliteDriver: DatabaseDriver = {
+  name: "sqlite",
+
+  async createSurvey(input) {
+    return createSurvey(input);
+  },
+  async getSurvey(id) {
+    return getSurvey(id);
+  },
+  async getSurveyByToken(token) {
+    return getSurveyByToken(token);
+  },
+  async listSurveys() {
+    return listSurveys();
+  },
+  async updateSurvey(id, patch) {
+    return updateSurvey(id, patch);
+  },
+  async deleteSurvey(id) {
+    deleteSurvey(id);
+  },
+
+  async createVideo(input) {
+    return createVideo(input);
+  },
+  async getVideo(id) {
+    return getVideo(id);
+  },
+  async listVideos(surveyId) {
+    return listVideos(surveyId);
+  },
+  async updateVideo(id, patch) {
+    return updateVideo(id, patch);
+  },
+  async deleteVideo(id) {
+    deleteVideo(id);
+  },
+};

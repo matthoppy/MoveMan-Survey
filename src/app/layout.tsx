@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
+import { isSupabaseConfigured } from "@/lib/db";
+import { SignOutButton } from "@/components/SignOutButton";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -27,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/surveys/new" className="btn btn-primary btn-sm">
               New survey
             </Link>
+            {isSupabaseConfigured() && <SignOutButton />}
           </div>
         </header>
         {children}

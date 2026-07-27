@@ -14,10 +14,10 @@ export interface SurveyView extends SurveyRecord {
  * every read, so editing an item immediately moves the quote and there is no
  * stale copy to go out of step.
  */
-export function withSurveyEstimate(survey: SurveyRecord): SurveyView {
+export async function withSurveyEstimate(survey: SurveyRecord): Promise<SurveyView> {
   return {
     ...survey,
-    videos: listVideos(survey.id),
+    videos: await listVideos(survey.id),
     estimate: estimateSurvey({
       items: survey.items,
       rooms: survey.rooms,

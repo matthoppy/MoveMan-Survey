@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CapturePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const survey = getSurveyByToken(token);
+  const survey = await getSurveyByToken(token);
   if (!survey) notFound();
 
   return (

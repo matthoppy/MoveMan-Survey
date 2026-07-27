@@ -14,7 +14,7 @@ type Params = { params: Promise<{ id: string }> };
  */
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  const survey = getSurvey(id);
+  const survey = await getSurvey(id);
   if (!survey) return NextResponse.json({ error: "Survey not found" }, { status: 404 });
 
   const mimeType = request.headers.get("content-type") ?? "";

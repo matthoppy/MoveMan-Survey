@@ -7,7 +7,7 @@ import { withSurveyEstimate } from "@/lib/survey-view";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const surveys = listSurveys().map(withSurveyEstimate);
+  const surveys = await Promise.all((await listSurveys()).map(withSurveyEstimate));
   return NextResponse.json({ surveys });
 }
 
@@ -32,6 +32,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid request" }, { status: 400 });
   }
 
-  const survey = createSurvey(parsed.data);
-  return NextResponse.json({ survey: withSurveyEstimate(survey) }, { status: 201 });
+  const survey = await createSurvey(parsed.data);
+  return NextResponse.json({ survey: await withSurveyEstimate(survey) }, { status: 201 });
 }

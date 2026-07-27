@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import { Readable } from "node:stream";
-import { getVideo } from "@/lib/db";
-import { deleteVideoFile, videoPath } from "@/lib/video-upload";
 import { NextResponse } from "next/server";
+import { deleteVideo, getSurvey, getVideo } from "@/lib/db";
+import { deleteVideoFile } from "@/lib/video-upload";
+import { getStorage } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -11,16 +12,34 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * Streams a stored survey video, honouring Range requests so the surveyor can
  * scrub through it rather than waiting for the whole file to download.
+ *
+ * When the file has been moved to object storage the browser is redirected to
+ * a short-lived signed URL, so the video never passes through this process.
  */
 export async function GET(request: Request, { params }: Params) {
   const { id } = await params;
-  const video = getVideo(id);
+
+  const video = await getVideo(id);
   if (!video) return new NextResponse("Not found", { status: 404 });
 
-  const file = videoPath(video);
-  if (!fs.existsSync(file)) return new NextResponse("Video file is missing from storage", { status: 410 });
+  // Authorisation rides on the parent survey: with Supabase configured this
+  // read runs under row-level security, so a survey the caller cannot see
+  // comes back empty and the video with it.
+  if (!(await getSurvey(video.surveyId))) {
+    return new NextResponse("Not found", { status: 404 });
+  }
 
-  const size = fs.statSync(file).size;
+  const resolved = await getStorage().resolve(video.filename, video.mimeType);
+
+  if (resolved.kind === "missing") {
+    return new NextResponse("Video file is missing from storage", { status: 410 });
+  }
+
+  if (resolved.kind === "redirect") {
+    return NextResponse.redirect(resolved.url, 307);
+  }
+
+  const { path: file, sizeBytes: size } = resolved;
   const range = request.headers.get("range");
 
   const headers = new Headers({
@@ -60,12 +79,15 @@ export async function GET(request: Request, { params }: Params) {
 
 export async function DELETE(_request: Request, { params }: Params) {
   const { id } = await params;
-  const video = getVideo(id);
-  if (!video) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  deleteVideoFile(video);
-  const { getDb } = await import("@/lib/db");
-  getDb().prepare("DELETE FROM videos WHERE id = ?").run(id);
+  const video = await getVideo(id);
+  if (!video) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!(await getSurvey(video.surveyId))) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  await deleteVideoFile(video);
+  await deleteVideo(id);
 
   return NextResponse.json({ ok: true });
 }

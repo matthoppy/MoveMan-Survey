@@ -6,8 +6,8 @@ import { isAiConfigured } from "@/lib/analysis";
 
 export const dynamic = "force-dynamic";
 
-export default function DashboardPage() {
-  const surveys = listSurveys();
+export default async function DashboardPage() {
+  const surveys = await listSurveys();
   const aiReady = isAiConfigured();
 
   const awaiting = surveys.filter((s) => s.status === "awaiting_video").length;
