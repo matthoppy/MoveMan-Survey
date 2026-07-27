@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Local data: survey database and stored survey videos.
+data/
+.env
+.env.local
+
+.DS_Store
+*.log
