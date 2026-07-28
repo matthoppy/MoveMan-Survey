@@ -24,9 +24,14 @@ export default async function DashboardPage() {
               : `${surveys.length} survey${surveys.length === 1 ? "" : "s"} · ${awaiting} awaiting video · ${toReview} ready to analyse`}
           </p>
         </div>
-        <Link href="/surveys/new" className="btn btn-primary">
-          New survey
-        </Link>
+        <div className="row-tight">
+          <Link href="/settings" className="btn">
+            Rates
+          </Link>
+          <Link href="/surveys/new" className="btn btn-primary">
+            New survey
+          </Link>
+        </div>
       </div>
 
       {!aiReady && (

@@ -61,6 +61,9 @@ export const listVideos: DatabaseDriver["listVideos"] = (surveyId) => getDriver(
 export const updateVideo: DatabaseDriver["updateVideo"] = (id, patch) =>
   getDriver().updateVideo(id, patch);
 export const deleteVideo: DatabaseDriver["deleteVideo"] = (id) => getDriver().deleteVideo(id);
+export const getRateCard: DatabaseDriver["getRateCard"] = () => getDriver().getRateCard();
+export const saveRateCard: DatabaseDriver["saveRateCard"] = (card) => getDriver().saveRateCard(card);
+
 export const listVideosBefore: DatabaseDriver["listVideosBefore"] = (cutoffIso) =>
   getDriver().listVideosBefore(cutoffIso);
 export const deleteVideoAsSystem: DatabaseDriver["deleteVideoAsSystem"] = (id) =>

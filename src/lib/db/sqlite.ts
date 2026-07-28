@@ -7,6 +7,7 @@ import type {
 } from "./driver";
 import { databasePath } from "../paths";
 import { newCaptureToken, newId, newReference } from "../ids";
+import type { RateCard } from "../pricing/types";
 import {
   DEFAULT_ACCESS,
   DEFAULT_JOURNEY,
@@ -67,6 +68,11 @@ export function getDb(): Database.Database {
       mode TEXT NOT NULL DEFAULT 'upload',
       complete INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_videos_survey ON videos(survey_id);
@@ -261,6 +267,34 @@ export function updateSurvey(id: string, patch: Partial<SurveyRecord>): SurveyRe
 
 export function deleteSurvey(id: string): void {
   getDb().prepare("DELETE FROM surveys WHERE id = ?").run(id);
+}
+
+// ---- Settings ----
+//
+// The local driver is single-tenant, so there is one rate card rather than one
+// per company. Same shape either way as far as the app is concerned.
+
+const RATE_CARD_KEY = "rate-card";
+
+export function getRateCard(): RateCard | null {
+  const row = getDb().prepare("SELECT value_json FROM settings WHERE key = ?").get(RATE_CARD_KEY) as
+    | { value_json: string }
+    | undefined;
+  if (!row) return null;
+  try {
+    return JSON.parse(row.value_json) as RateCard;
+  } catch {
+    return null;
+  }
+}
+
+export function saveRateCard(card: RateCard): RateCard {
+  getDb()
+    .prepare(
+      "INSERT INTO settings (key, value_json) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json",
+    )
+    .run(RATE_CARD_KEY, JSON.stringify(card));
+  return card;
 }
 
 // ---- Videos ----
@@ -461,6 +495,13 @@ export const sqliteDriver: DatabaseDriver = {
   async deleteVideo(id) {
     deleteVideo(id);
   },
+  async getRateCard() {
+    return getRateCard();
+  },
+  async saveRateCard(card) {
+    return saveRateCard(card);
+  },
+
   async deleteVideoAsSystem(id) {
     // Nothing to bypass — the local driver is single-tenant and has no sessions.
     deleteVideo(id);

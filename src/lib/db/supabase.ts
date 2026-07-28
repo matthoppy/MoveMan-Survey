@@ -14,6 +14,7 @@ import {
   type VideoRecord,
 } from "../types";
 import type { CreateSurveyInput, CreateVideoInput, DatabaseDriver, UpdateVideoInput } from "./driver";
+import type { RateCard } from "../pricing/types";
 
 interface SurveyRow {
   id: string;
@@ -296,6 +297,48 @@ export const supabaseDriver: DatabaseDriver = {
       .eq("survey_id", surveyId)
       .order("created_at", { ascending: true });
     return (data ?? []).map((row) => toVideo(row as VideoRow));
+  },
+
+  async getRateCard() {
+    const client = await asUser();
+    const companyId = await currentCompanyId();
+    if (!companyId) return null;
+
+    const { data } = await client
+      .from("companies")
+      .select("rate_card")
+      .eq("id", companyId)
+      .maybeSingle();
+
+    return (data?.rate_card as RateCard | null) ?? null;
+  },
+
+  async saveRateCard(card) {
+    const client = await asUser();
+    const companyId = await currentCompanyId();
+    if (!companyId) {
+      throw new Error("You are not attached to a company yet, so there is nothing to save rates against.");
+    }
+
+    // .select() is what makes a refused write visible: row-level security
+    // turns "you are not an admin" into an update that matches no rows, and
+    // Postgres does not consider that an error. Without reading the row back
+    // the settings page would report success and have saved nothing.
+    const { data, error } = await client
+      .from("companies")
+      .update({ rate_card: card })
+      .eq("id", companyId)
+      .select("rate_card")
+      .maybeSingle();
+
+    if (error) throw new Error(`Could not save the rate card: ${error.message}`);
+    if (!data) {
+      throw new Error(
+        "The rate card was not saved. Only an admin can change a company's rates — ask whoever set the account up.",
+      );
+    }
+
+    return data.rate_card as RateCard;
   },
 
   async listVideosBefore(cutoffIso) {

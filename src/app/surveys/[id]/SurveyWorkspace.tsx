@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AccessFields } from "@/components/AccessFields";
 import { JourneyFields } from "@/components/JourneyFields";
 import { EstimatePanel } from "@/components/EstimatePanel";
+import { QuotePanel } from "@/components/QuotePanel";
 import { InventoryTable } from "@/components/InventoryTable";
 import { VideoPanel } from "@/components/VideoPanel";
 import { STATUS_CLASS, STATUS_LABEL, formatDate, formatDateTime } from "@/lib/format";
@@ -345,7 +346,14 @@ export function SurveyWorkspace({
           )}
         </div>
 
-        <EstimatePanel estimate={survey.estimate} />
+        <div className="stack">
+          <QuotePanel
+            quote={survey.quote}
+            ratesConfigured={survey.ratesConfigured}
+            surveyId={survey.id}
+          />
+          <EstimatePanel estimate={survey.estimate} />
+        </div>
       </div>
 
       <section className="card no-print" style={{ marginTop: "1.5rem" }}>

@@ -1,4 +1,5 @@
 import type { SurveyRecord, VideoRecord, CaptureMode, AccessDetails, JourneyDetails } from "../types";
+import type { RateCard } from "../pricing/types";
 
 export interface CreateSurveyInput {
   clientName: string;
@@ -71,6 +72,15 @@ export interface DatabaseDriver {
   recordConsentByToken(token: string): Promise<void>;
   upsertVideoByToken(token: string, input: UpsertCaptureVideoInput): Promise<VideoRecord>;
   getVideoByToken(token: string, videoId: string): Promise<VideoRecord | null>;
+
+  /**
+   * The company's rate card, or null if they have never set one.
+   *
+   * Null is deliberately distinct from "the defaults": a company that has not
+   * entered its rates must be told, not quietly quoted from example figures.
+   */
+  getRateCard(): Promise<RateCard | null>;
+  saveRateCard(card: RateCard): Promise<RateCard>;
 
   /**
    * Every video recorded before the cutoff, oldest first, across all companies.

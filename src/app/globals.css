@@ -512,3 +512,30 @@ a:hover { text-decoration: underline; }
   .card { box-shadow: none; break-inside: avoid; }
   .container { max-width: none; padding: 0; }
 }
+
+/* Quote sections: collapsed by default so the price reads first and the
+   working is one tap away rather than a wall of lines. */
+.disclosure {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.disclosure > summary {
+  cursor: pointer;
+  padding: 0.55rem 0.75rem;
+  list-style: none;
+}
+.disclosure > summary::-webkit-details-marker { display: none; }
+.disclosure > summary .spread { width: 100%; }
+.disclosure[open] > summary { border-bottom: 1px solid var(--border); }
+.table-sm td { padding: 0.4rem 0.75rem; font-size: 0.85rem; }
+
+/* The printed quote: one page, no app furniture. */
+@media print {
+  .no-print { display: none !important; }
+  .quote-sheet { padding: 0; }
+  .quote-sheet .card { border: none; box-shadow: none; break-inside: avoid; }
+  .quote-sheet .card + .card { margin-top: 0.5rem; }
+  .page-break { break-before: page; }
+}
+.rule { border: none; border-top: 1px solid var(--border); margin: 0.5rem 0; }
