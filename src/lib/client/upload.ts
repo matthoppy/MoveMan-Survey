@@ -7,6 +7,34 @@
  * customer sending a 400 MB video over a phone connection needs to see the
  * bar move, or they close the tab.
  */
+/**
+ * An upload that failed, carrying enough to decide whether trying again is
+ * worth anything. A 413 will fail identically forever; a dropped connection on
+ * a phone walking past a lift almost certainly will not.
+ */
+export class UploadError extends Error {
+  constructor(
+    message: string,
+    /** HTTP status, or 0 when the request never got a reply. */
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "UploadError";
+  }
+
+  get retryable(): boolean {
+    // No reply at all: the network went away. Retry.
+    if (this.status === 0) return true;
+    // 408 and 429 are explicit invitations to come back.
+    if (this.status === 408 || this.status === 429) return true;
+    // The server fell over or a proxy timed out — not the chunk's fault.
+    if (this.status >= 500) return true;
+    // Anything else in the 4xx range is a complaint about this request, and
+    // sending it again unchanged just wastes the customer's battery.
+    return false;
+  }
+}
+
 export function uploadBlob(opts: {
   url: string;
   blob: Blob;
@@ -42,11 +70,12 @@ export function uploadBlob(opts: {
       if (xhr.status >= 200 && xhr.status < 300 && payload.video) {
         resolve({ video: payload.video });
       } else {
-        reject(new Error(payload.error ?? `Upload failed (${xhr.status})`));
+        reject(new UploadError(payload.error ?? `Upload failed (${xhr.status})`, xhr.status));
       }
     };
 
-    xhr.onerror = () => reject(new Error("Upload failed — check your connection and try again."));
+    xhr.onerror = () =>
+      reject(new UploadError("Upload failed — check your connection and try again.", 0));
     xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
 
     opts.signal?.addEventListener("abort", () => xhr.abort(), { once: true });

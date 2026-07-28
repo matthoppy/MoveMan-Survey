@@ -2,12 +2,54 @@ import type { InventoryItem, PackingLevel, RoomSurvey } from "../types";
 
 export type CartonType = "large" | "medium" | "book" | "wardrobe";
 
+export interface CartonSpec {
+  /** What the warehouse calls it. */
+  name: string;
+  /** Outside dimensions in millimetres, length × width × depth. */
+  mm: [number, number, number];
+  /** The code it is ordered under. */
+  code: string;
+  /**
+   * False where the dimensions are the standard trade size rather than the
+   * ones this company actually buys. Swap them in and every volume, van and
+   * price downstream follows — that is the point of deriving rather than
+   * hard-coding.
+   */
+  confirmed: boolean;
+}
+
+/**
+ * The cartons themselves.
+ *
+ * Volume is worked out from the dimensions rather than written down beside
+ * them, because a carton's volume is not an opinion and the two drift apart
+ * the moment someone edits one and not the other. It happened here: the large
+ * carton was carrying 3 cu ft against real dimensions of 4.5, so every packed
+ * kitchen was under-read by about a third of a cubic metre and the van was
+ * sized from the wrong number.
+ */
+export const CARTON_SPECS: Record<CartonType, CartonSpec> = {
+  large: { name: "Large carton", code: "610 x 457 x 457", mm: [610, 457, 457], confirmed: true },
+  medium: { name: "Medium (no.2) carton", code: "457 x 457 x 406", mm: [457, 457, 406], confirmed: false },
+  book: { name: "Book (small) carton", code: "457 x 305 x 305", mm: [457, 305, 305], confirmed: false },
+  wardrobe: { name: "Hanging wardrobe carton", code: "508 x 457 x 1219", mm: [508, 457, 1219], confirmed: false },
+};
+
+const CUFT_PER_CUBIC_MM = 35.3147 / 1_000_000_000;
+
+export function cartonVolumeCuFt(type: CartonType): number {
+  const [l, w, d] = CARTON_SPECS[type].mm;
+  // Rounded to two places: the estimate is quoted in whole cubic feet, and
+  // carrying the full float only makes the working harder to check by hand.
+  return Math.round(l * w * d * CUFT_PER_CUBIC_MM * 100) / 100;
+}
+
 /** Volume a packed carton occupies on the van, cubic feet. */
 export const CARTON_VOLUME_CUFT: Record<CartonType, number> = {
-  large: 3,
-  medium: 1.5,
-  book: 1,
-  wardrobe: 10,
+  large: cartonVolumeCuFt("large"),
+  medium: cartonVolumeCuFt("medium"),
+  book: cartonVolumeCuFt("book"),
+  wardrobe: cartonVolumeCuFt("wardrobe"),
 };
 
 export interface CartonPlan {

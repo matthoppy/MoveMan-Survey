@@ -1,4 +1,5 @@
 import type { PackingClass } from "./types";
+import { CARTON_VOLUME_CUFT } from "./estimate/cartons";
 
 /**
  * Volume table for household goods, in cubic feet per unit.
@@ -130,9 +131,12 @@ export const CATALOG: CatalogEntry[] = [
   e("pool-table", "Pool table", 70, ["garage"], { twoPersonLift: true, dismantle: true, packing: "specialist" }),
 
   // ---- Cartons the customer has already packed ----
-  e("carton-med", "Medium carton (packed)", 1.5, ["any"], { twoPersonLift: false, packing: "none", aliases: ["box", "boxes"] }),
-  e("carton-lg", "Large carton (packed)", 3, ["any"], { twoPersonLift: false, packing: "none" }),
-  e("carton-book", "Book carton (packed)", 1, ["any"], { twoPersonLift: false, packing: "none" }),
+  // Same cartons the crew supplies, so the same dimensions. A box does not
+  // change size according to who filled it, and holding the figure in two
+  // places is how they came to disagree in the first place.
+  e("carton-med", "Medium carton (packed)", CARTON_VOLUME_CUFT.medium, ["any"], { twoPersonLift: false, packing: "none", aliases: ["box", "boxes"] }),
+  e("carton-lg", "Large carton (packed)", CARTON_VOLUME_CUFT.large, ["any"], { twoPersonLift: false, packing: "none" }),
+  e("carton-book", "Book carton (packed)", CARTON_VOLUME_CUFT.book, ["any"], { twoPersonLift: false, packing: "none" }),
   e("plastic-box", "Plastic storage box", 3, ["any"], { twoPersonLift: false, packing: "none" }),
   e("suitcase", "Suitcase", 4, ["any"], { twoPersonLift: false, packing: "none" }),
 ];

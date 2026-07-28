@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { matchCatalog, getCatalogEntry } from "../src/lib/catalog.ts";
 import { estimateSurvey } from "../src/lib/estimate/index.ts";
 import { accessFactor, planVehicles, computeDrivingHours } from "../src/lib/estimate/crew.ts";
-import { cartonPlan } from "../src/lib/estimate/cartons.ts";
+import { cartonPlan, CARTON_SPECS, CARTON_VOLUME_CUFT } from "../src/lib/estimate/cartons.ts";
 import { computeMaterials } from "../src/lib/estimate/materials.ts";
 import { offlineAnalyse } from "../src/lib/analysis/offline.ts";
 import { normaliseAnalysis } from "../src/lib/analysis/normalise.ts";
@@ -526,4 +526,29 @@ test("a single bed is never priced as a double", () => {
   assert.equal(single.cuFt, 30);
   assert.equal(double.cuFt, 45);
   assert.notEqual(single.id, double.id);
+});
+
+test("carton volumes are the cartons' actual dimensions", () => {
+  // Pinned absolutely, not relatively. Every other carton test here compares
+  // one figure to another — which is exactly why the large carton sat at 3 cu
+  // ft against real dimensions of 4.5 without a single test noticing.
+  assert.equal(CARTON_VOLUME_CUFT.large, 4.5, "610 x 457 x 457 mm");
+  assert.equal(CARTON_VOLUME_CUFT.medium, 2.99, "457 x 457 x 406 mm");
+  assert.equal(CARTON_VOLUME_CUFT.book, 1.5, "457 x 305 x 305 mm");
+  assert.equal(CARTON_VOLUME_CUFT.wardrobe, 9.99, "508 x 457 x 1219 mm");
+});
+
+test("every carton volume is derived from its own dimensions", () => {
+  for (const type of ["large", "medium", "book", "wardrobe"] as const) {
+    const [l, w, d] = CARTON_SPECS[type].mm;
+    const expected = Math.round(((l * w * d) / 1e9) * 35.3147 * 100) / 100;
+    assert.equal(CARTON_VOLUME_CUFT[type], expected, `${type} must follow its dimensions`);
+  }
+});
+
+test("a carton the customer packed is the same size as one we packed", () => {
+  // The volume of a box does not depend on whose hands filled it.
+  assert.equal(getCatalogEntry("carton-lg")?.cuFt, CARTON_VOLUME_CUFT.large);
+  assert.equal(getCatalogEntry("carton-med")?.cuFt, CARTON_VOLUME_CUFT.medium);
+  assert.equal(getCatalogEntry("carton-book")?.cuFt, CARTON_VOLUME_CUFT.book);
 });

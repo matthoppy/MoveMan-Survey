@@ -1,6 +1,19 @@
 import type { InventoryItem, MaterialLine, RoomSurvey } from "../types";
-import { cartonPlan, totalCartons, type CartonPlan } from "./cartons";
+import {
+  cartonPlan,
+  cartonVolumeCuFt,
+  totalCartons,
+  CARTON_SPECS,
+  type CartonPlan,
+  type CartonType,
+} from "./cartons";
 import { furnitureVolume } from "./volume";
+
+/** "Large carton (610 x 457 x 457mm, 4.5 cu ft)" — what to order and what it holds. */
+function cartonLabel(type: CartonType): string {
+  const spec = CARTON_SPECS[type];
+  return `${spec.name} (${spec.mm.join(" x ")}mm, ${cartonVolumeCuFt(type)} cu ft)`;
+}
 
 interface Ctx {
   items: InventoryItem[];
@@ -35,10 +48,13 @@ export function computeMaterials(items: InventoryItem[], rooms: RoomSurvey[]): M
     ? `${packedRooms.length} room(s) to pack: ${packedRooms.map((r) => `${r.name} (${r.packingLevel})`).join(", ")}`
     : "no crew packing requested";
 
-  push("CTN-LG", "Large carton (1.5 cu ft usable)", "each", plan.large, packBasis);
-  push("CTN-MD", "Medium carton (standard)", "each", plan.medium, packBasis);
-  push("CTN-BK", "Book carton (small, heavy goods)", "each", plan.book, packBasis);
-  push("CTN-WD", "Wardrobe carton with rail", "each", plan.wardrobe, "hanging space in wardrobes to be packed");
+  // Names carry the dimensions the warehouse orders by, taken from the same
+  // spec the volume is worked out from — this line used to say "1.5 cu ft
+  // usable" for a carton that is 4.5.
+  push("CTN-LG", cartonLabel("large"), "each", plan.large, packBasis);
+  push("CTN-MD", cartonLabel("medium"), "each", plan.medium, packBasis);
+  push("CTN-BK", cartonLabel("book"), "each", plan.book, packBasis);
+  push("CTN-WD", cartonLabel("wardrobe"), "each", plan.wardrobe, "hanging space in wardrobes to be packed");
 
   // ---- Purpose-made boxes, needed whoever packs the room ----
   const bigTvs = countOf(items, ["tv-large", "tv-xl"]);

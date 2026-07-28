@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { extractFrames } from "@/lib/client/frames";
+import { allocateFrames, sum } from "@/lib/frame-budget";
 import { transcribeVideo } from "@/lib/client/transcribe";
 import { baseMimeType, uploadBlob } from "@/lib/client/upload";
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
@@ -131,10 +132,29 @@ export function VideoPanel({
       }
 
       setPhase("extracting");
-      const { frames, durationSec } = await extractFrames(`/api/videos/${selected.id}`, {
-        count: 20,
-        onProgress: (done, total) => setProgress(done / total),
-      });
+
+      // Read every part, not just the one on screen. A customer whose phone
+      // rang mid-survey has two recordings covering different rooms, and
+      // analysing only the selected one quietly loses half the house.
+      const parts = survey.videos.filter((video) => video.complete);
+      const budget = allocateFrames(parts, 20);
+
+      const frames: string[] = [];
+      let durationSec = 0;
+
+      for (const [index, part] of parts.entries()) {
+        const count = budget[index];
+        if (count === 0) continue;
+
+        const result = await extractFrames(`/api/videos/${part.id}`, {
+          count,
+          onProgress: (done, total) =>
+            setProgress((frames.length + (done / total) * count) / Math.max(1, sum(budget))),
+        });
+
+        frames.push(...result.frames);
+        durationSec += result.durationSec;
+      }
 
       if (frames.length === 0) {
         throw new Error("No frames could be read from this video.");
