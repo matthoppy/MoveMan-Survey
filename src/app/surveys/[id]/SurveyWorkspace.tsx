@@ -27,6 +27,9 @@ export function SurveyWorkspace({
   const [tab, setTab] = useState<Tab>("survey");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [copied, setCopied] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<Record<string, unknown> | null>(null);
@@ -104,6 +107,51 @@ export function SurveyWorkspace({
     }
   }
 
+  const shareMessage =
+    `Hello${survey.clientName ? ` ${survey.clientName}` : ""}, here's the link to film your ` +
+    `home survey for your move (reference ${survey.reference}). It works straight from your ` +
+    `phone — no app to install: ${captureUrl}`;
+
+  /**
+   * Hands the link to whatever the office actually uses.
+   *
+   * On a phone this opens the share sheet, which is where WhatsApp lives; on a
+   * desktop there is no sheet, so it falls back to an email draft. Copy-paste
+   * still works either way — this only removes the step where someone
+   * accidentally sends half a URL.
+   */
+  async function shareLink() {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `Home survey ${survey.reference}`, text: shareMessage });
+        return;
+      } catch {
+        // Dismissing the share sheet throws. Nothing to report.
+        return;
+      }
+    }
+
+    const subject = encodeURIComponent(`Your home survey — ${survey.reference}`);
+    const body = encodeURIComponent(shareMessage);
+    window.location.href = `mailto:${survey.clientEmail}?subject=${subject}&body=${body}`;
+  }
+
+  async function deleteSurvey() {
+    setDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(`/api/surveys/${survey.id}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "The survey could not be deleted.");
+      window.location.href = "/";
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "The survey could not be deleted.");
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
+
   return (
     <main className="container">
       <div className="page-head">
@@ -141,10 +189,18 @@ export function SurveyWorkspace({
               <button className="btn btn-sm" onClick={copyLink}>
                 {copied ? "Copied" : "Copy"}
               </button>
+              <button className="btn btn-sm btn-primary" onClick={shareLink}>
+                Send
+              </button>
             </div>
             <p className="hint">
               Send this to the customer. They can record the walkthrough on their phone or upload a video
               they&apos;ve already taken — no login, no app.
+            </p>
+            <p className="tiny faint">
+              {survey.consentedAt
+                ? `Recording notice accepted ${formatDateTime(survey.consentedAt)}.`
+                : "The customer has not yet accepted the recording notice."}
             </p>
           </div>
         </div>
@@ -291,6 +347,40 @@ export function SurveyWorkspace({
 
         <EstimatePanel estimate={survey.estimate} />
       </div>
+
+      <section className="card no-print" style={{ marginTop: "1.5rem" }}>
+        <div className="card-body stack-sm">
+          <span className="label">Delete this survey</span>
+          <p className="hint">
+            Removes the survey, its inventory and every recording — the video files too, not just the
+            entries pointing at them. There is no undo. Use this when a customer asks you to erase
+            their footage, or when a survey was created by mistake.
+          </p>
+
+          {deleteError && <div className="notice notice-danger small">{deleteError}</div>}
+
+          {confirmingDelete ? (
+            <div className="row-tight">
+              <button className="btn btn-sm btn-danger" onClick={deleteSurvey} disabled={deleting}>
+                {deleting ? "Deleting…" : "Yes, delete permanently"}
+              </button>
+              <button
+                className="btn btn-sm"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div>
+              <button className="btn btn-sm btn-danger" onClick={() => setConfirmingDelete(true)}>
+                Delete survey and videos
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
     </main>
   );
 }

@@ -7,6 +7,19 @@ test("the customer capture link never needs an account", () => {
   assert.equal(isPublicPath("/capture/Ozq9i9dmSqG6cIiu5qC0Y8caP_i4CibC"), true);
   assert.equal(isPublicPath("/api/capture/Ozq9i9dm/video"), true);
   assert.equal(isPublicPath("/api/capture/Ozq9i9dm/transcript"), true);
+  assert.equal(isPublicPath("/api/capture/Ozq9i9dm/consent"), true);
+});
+
+test("the customer can read what they are agreeing to", () => {
+  // A privacy notice you have to sign in to read is not a privacy notice, and
+  // the person being asked to film their house has no account.
+  assert.equal(isPublicPath("/privacy"), true);
+});
+
+test("the retention purge is reachable by a scheduler", () => {
+  // It carries its own shared secret; a redirect to /login would leave every
+  // expired video in place and nothing would say so.
+  assert.equal(isPublicPath("/api/retention/purge"), true);
 });
 
 test("signing in is reachable when signed out", () => {

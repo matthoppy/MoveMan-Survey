@@ -38,6 +38,7 @@ interface SurveyRow {
   analysis_flags: string[] | null;
   analysis_model: string | null;
   analysed_at: string | null;
+  consented_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -77,6 +78,7 @@ function toSurvey(row: SurveyRow): SurveyRecord {
     analysisFlags: row.analysis_flags ?? [],
     analysisModel: row.analysis_model,
     analysedAt: row.analysed_at,
+    consentedAt: row.consented_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -116,6 +118,7 @@ const COLUMN_FOR: Record<string, string> = {
   analysisFlags: "analysis_flags",
   analysisModel: "analysis_model",
   analysedAt: "analysed_at",
+  consentedAt: "consented_at",
 };
 
 /** Reads and writes on behalf of the signed-in user, under row-level security. */
@@ -192,6 +195,12 @@ export const supabaseDriver: DatabaseDriver = {
       p_append: append,
     });
     if (error) throw new Error(`Could not save the narration: ${error.message}`);
+  },
+
+  async recordConsentByToken(token) {
+    const client = await asAnon();
+    const { error } = await client.rpc("capture_record_consent", { p_token: token });
+    if (error) throw new Error(`Could not record your agreement: ${error.message}`);
   },
 
   async upsertVideoByToken(token, input) {
@@ -289,6 +298,22 @@ export const supabaseDriver: DatabaseDriver = {
     return (data ?? []).map((row) => toVideo(row as VideoRow));
   },
 
+  async listVideosBefore(cutoffIso) {
+    // The purge runs on a schedule with nobody signed in, so row-level security
+    // has no session to filter by and the user client would return an empty
+    // list — silently leaving every expired video in place. This is the only
+    // read in the app that uses the service role.
+    const { serviceClient } = require("../supabase/server") as typeof import("../supabase/server");
+    const { data, error } = await serviceClient()
+      .from("videos")
+      .select()
+      .lt("created_at", cutoffIso)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(`Could not list expired videos: ${error.message}`);
+    return (data ?? []).map((row) => toVideo(row as VideoRow));
+  },
+
   async updateVideo(id, patch: UpdateVideoInput) {
     const payload: Record<string, unknown> = {};
     if (patch.sizeBytes !== undefined) payload.size_bytes = patch.sizeBytes;
@@ -311,5 +336,11 @@ export const supabaseDriver: DatabaseDriver = {
   async deleteVideo(id) {
     const client = await asUser();
     await client.from("videos").delete().eq("id", id);
+  },
+
+  async deleteVideoAsSystem(id) {
+    const { serviceClient } = require("../supabase/server") as typeof import("../supabase/server");
+    const { error } = await serviceClient().from("videos").delete().eq("id", id);
+    if (error) throw new Error(`Could not delete the expired video: ${error.message}`);
   },
 };

@@ -52,6 +52,7 @@ export function getDb(): Database.Database {
       analysis_flags_json TEXT NOT NULL DEFAULT '[]',
       analysis_model TEXT,
       analysed_at TEXT,
+      consented_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -70,9 +71,28 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_videos_survey ON videos(survey_id);
     CREATE INDEX IF NOT EXISTS idx_surveys_token ON surveys(capture_token);
+    CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at);
   `);
 
+  addMissingColumns(db);
   return db;
+}
+
+/**
+ * Brings a database created by an earlier version up to date.
+ *
+ * `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists, so
+ * a column added later never appears on a developer's existing `data/` file
+ * and every read of it comes back undefined. Adding them here keeps a local
+ * install upgradeable without anyone having to delete their database.
+ */
+function addMissingColumns(handle: Database.Database): void {
+  const columns = new Set(
+    (handle.prepare("PRAGMA table_info(surveys)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (!columns.has("consented_at")) {
+    handle.exec("ALTER TABLE surveys ADD COLUMN consented_at TEXT");
+  }
 }
 
 type SurveyRow = {
@@ -97,6 +117,7 @@ type SurveyRow = {
   analysis_flags_json: string;
   analysis_model: string | null;
   analysed_at: string | null;
+  consented_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -132,6 +153,7 @@ function toSurvey(row: SurveyRow): SurveyRecord {
     analysisFlags: parse<string[]>(row.analysis_flags_json, []),
     analysisModel: row.analysis_model,
     analysedAt: row.analysed_at,
+    consentedAt: row.consented_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -152,13 +174,13 @@ export function createSurvey(input: CreateSurveyInput): SurveyRecord {
         origin_address, destination_address, move_date, status, capture_token,
         origin_json, destination_json, journey_json, packing_day_before,
         rooms_json, items_json, transcript, analysis_summary, analysis_flags_json,
-        analysis_model, analysed_at, created_at, updated_at
+        analysis_model, analysed_at, consented_at, created_at, updated_at
       ) VALUES (
         @id, @reference, @client_name, @client_email, @client_phone,
         @origin_address, @destination_address, @move_date, 'awaiting_video', @capture_token,
         @origin_json, @destination_json, @journey_json, @packing_day_before,
         '[]', '[]', '', '', '[]',
-        NULL, NULL, @created_at, @updated_at
+        NULL, NULL, NULL, @created_at, @updated_at
       )`,
     )
     .run({
@@ -214,6 +236,7 @@ const COLUMN_FOR: Record<string, { column: string; encode: (v: unknown) => unkno
   analysisFlags: { column: "analysis_flags_json", encode: (v) => JSON.stringify(v) },
   analysisModel: { column: "analysis_model", encode: (v) => (v == null ? null : String(v)) },
   analysedAt: { column: "analysed_at", encode: (v) => (v == null ? null : String(v)) },
+  consentedAt: { column: "consented_at", encode: (v) => (v == null ? null : String(v)) },
 };
 
 export function updateSurvey(id: string, patch: Partial<SurveyRecord>): SurveyRecord | null {
@@ -301,6 +324,13 @@ export function listVideos(surveyId: string): VideoRecord[] {
   return rows.map(toVideo);
 }
 
+export function listVideosBefore(cutoffIso: string): VideoRecord[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM videos WHERE created_at < ? ORDER BY created_at ASC")
+    .all(cutoffIso) as VideoRow[];
+  return rows.map(toVideo);
+}
+
 export function updateVideo(id: string, patch: UpdateVideoInput): VideoRecord | null {
   const sets: string[] = [];
   const params: Record<string, unknown> = { id };
@@ -361,6 +391,16 @@ export const sqliteDriver: DatabaseDriver = {
     updateSurvey(survey.id, { transcript });
   },
 
+  async recordConsentByToken(token) {
+    const survey = getSurveyByToken(token);
+    if (!survey) throw new Error("unknown capture token");
+    // First acceptance is the one that counts — re-opening the link to send a
+    // second video does not restart the clock on when they agreed.
+    if (!survey.consentedAt) {
+      updateSurvey(survey.id, { consentedAt: new Date().toISOString() });
+    }
+  },
+
   async upsertVideoByToken(token, input) {
     const survey = getSurveyByToken(token);
     if (!survey) throw new Error("unknown capture token");
@@ -412,10 +452,17 @@ export const sqliteDriver: DatabaseDriver = {
   async listVideos(surveyId) {
     return listVideos(surveyId);
   },
+  async listVideosBefore(cutoffIso) {
+    return listVideosBefore(cutoffIso);
+  },
   async updateVideo(id, patch) {
     return updateVideo(id, patch);
   },
   async deleteVideo(id) {
+    deleteVideo(id);
+  },
+  async deleteVideoAsSystem(id) {
+    // Nothing to bypass — the local driver is single-tenant and has no sessions.
     deleteVideo(id);
   },
 };

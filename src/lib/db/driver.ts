@@ -67,8 +67,22 @@ export interface DatabaseDriver {
    * the token belongs to.
    */
   setTranscriptByToken(token: string, text: string, append: boolean): Promise<void>;
+  /** Records that the customer accepted the recording notice. First acceptance wins. */
+  recordConsentByToken(token: string): Promise<void>;
   upsertVideoByToken(token: string, input: UpsertCaptureVideoInput): Promise<VideoRecord>;
   getVideoByToken(token: string, videoId: string): Promise<VideoRecord | null>;
+
+  /**
+   * Every video recorded before the cutoff, oldest first, across all companies.
+   *
+   * The retention purge is the one job that has to see past a single tenant —
+   * it runs on a schedule with no user behind it. It is deliberately the only
+   * method that does, and it returns nothing but the video rows.
+   */
+  listVideosBefore(cutoffIso: string): Promise<VideoRecord[]>;
+
+  /** Removes a video row on behalf of the retention purge, which has no session. */
+  deleteVideoAsSystem(id: string): Promise<void>;
 
   createVideo(input: CreateVideoInput): Promise<VideoRecord>;
   getVideo(id: string): Promise<VideoRecord | null>;

@@ -5,7 +5,7 @@ import { baseMimeType, pickRecorderMimeType, uploadBlob } from "@/lib/client/upl
 import { isSpeechSupported, startTranscribing, type TranscriberHandle } from "@/lib/client/speech";
 import { keepScreenAwake, type WakeLockHandle } from "@/lib/client/wakelock";
 
-type Stage = "intro" | "recording" | "uploading" | "done";
+type Stage = "consent" | "intro" | "recording" | "uploading" | "done";
 
 const GUIDANCE = [
   "Walk through one room at a time and say the room name as you go in.",
@@ -24,13 +24,20 @@ export function CaptureClient({
   clientName,
   reference,
   alreadySubmitted,
+  alreadyConsented,
+  companyName,
+  retention,
 }: {
   token: string;
   clientName: string;
   reference: string;
   alreadySubmitted: boolean;
+  alreadyConsented: boolean;
+  companyName: string;
+  retention: string;
 }) {
-  const [stage, setStage] = useState<Stage>("intro");
+  const [stage, setStage] = useState<Stage>(alreadyConsented ? "intro" : "consent");
+  const [agreeing, setAgreeing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -89,6 +96,29 @@ export function CaptureClient({
     },
     [token],
   );
+
+  /**
+   * Store the agreement before anything can be filmed.
+   *
+   * If this fails we stay on the notice rather than letting them record
+   * anyway: a video arriving with no record of consent behind it is the exact
+   * situation the screen exists to prevent, and it cannot be fixed after the
+   * fact.
+   */
+  async function acceptNotice() {
+    setError(null);
+    setAgreeing(true);
+
+    try {
+      const response = await fetch(`/api/capture/${token}/consent`, { method: "POST" });
+      if (!response.ok) throw new Error("Could not save your agreement.");
+      setStage("intro");
+    } catch {
+      setError("We couldn't save your agreement — check your connection and tap again.");
+    } finally {
+      setAgreeing(false);
+    }
+  }
 
   async function startRecording() {
     setError(null);
@@ -293,6 +323,53 @@ export function CaptureClient({
         </div>
 
         {error && <div className="notice notice-danger">{error}</div>}
+
+        {stage === "consent" && (
+          <section className="card">
+            <div className="card-head">
+              <h2>Before you start</h2>
+            </div>
+            <div className="card-body stack">
+              <p className="small">
+                You&apos;re about to film the inside of your home so {companyName} can work out what
+                needs moving and quote for it. Here&apos;s what happens to that recording.
+              </p>
+
+              <ul className="small stack-sm" style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                <li>
+                  The video and sound are stored by {companyName} and used to price your move.
+                </li>
+                <li>
+                  It&apos;s read by an AI assistant that drafts the inventory, then checked by a
+                  surveyor. It isn&apos;t used to train anyone&apos;s models.
+                </li>
+                <li>
+                  It&apos;s deleted after <strong>{retention}</strong>, and sooner if you ask.
+                </li>
+                <li>Only staff at {companyName} watch it.</li>
+              </ul>
+
+              <div className="notice notice-info small">
+                <strong>Film what&apos;s moving, nothing else.</strong> There&apos;s no need to show
+                paperwork, screens or other people — and please don&apos;t.
+              </div>
+
+              <button
+                className="btn btn-primary btn-lg btn-block"
+                onClick={acceptNotice}
+                disabled={agreeing}
+              >
+                {agreeing ? "One moment…" : "I understand — let's get started"}
+              </button>
+
+              <p className="hint center">
+                <a href="/privacy" target="_blank" rel="noreferrer">
+                  Read the full privacy notice
+                </a>
+              </p>
+            </div>
+          </section>
+        )}
 
         {stage === "intro" && (
           <>

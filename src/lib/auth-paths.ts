@@ -15,6 +15,12 @@ const PUBLIC_PREFIXES = [
   "/api/auth/",
   "/manifest.webmanifest",
   "/icon",
+  // The customer has to be able to read what they are agreeing to, and they
+  // have no account. A privacy notice behind a login is not a privacy notice.
+  "/privacy",
+  // Called by a scheduler, not a browser; it authenticates with its own shared
+  // secret rather than a session, so a redirect to /login would just break it.
+  "/api/retention/purge",
 ];
 
 export function isPublicPath(pathname: string): boolean {

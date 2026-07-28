@@ -183,6 +183,15 @@ export interface SurveyRecord {
   analysisFlags: string[];
   analysisModel: string | null;
   analysedAt: string | null;
+  /**
+   * When the customer accepted the recording notice on the capture page.
+   *
+   * Null means nobody has agreed to be filmed yet. Consent has to be a stored
+   * fact rather than a checkbox that scrolls away, because the thing being
+   * asked about — footage of the inside of someone's home — is exactly the
+   * kind of processing you have to be able to evidence later.
+   */
+  consentedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
