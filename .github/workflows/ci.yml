@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A second push to the same branch makes the first run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ci, not install: builds from the lockfile exactly, so a dependency
+      # cannot drift between what was tested and what gets deployed.
+      - run: npm ci
+
+      - name: Types
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      # Catches what the other two cannot: a server component importing
+      # something that only exists in the browser, a route that will not
+      # compile, a page that throws while being rendered.
+      - name: Build
+        run: npm run build
+        env:
+          # The build must not need real credentials. If this ever starts
+          # failing without them, something has begun reaching for a live
+          # service at build time, which would also break a cold deploy.
+          NEXT_TELEMETRY_DISABLED: "1"

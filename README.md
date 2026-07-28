@@ -25,6 +25,11 @@ of things it could not determine and a human must confirm.
 **Estimating.** Everything downstream is deterministic and recomputed on every read, so
 correcting an item moves the quote immediately. Nothing is cached and nothing goes stale.
 
+**Pricing.** A rate card per company — crew rate, vehicle day rates, mileage,
+materials, minimum charge, VAT — turns the estimate into a quote and a warehouse
+picking list, both printable. Nothing is stored: change a rate and every open
+survey reprices.
+
 **Correction.** The inventory is fully editable. Quantities, volumes, fragile and dismantle
 flags, packing level per room, access at both ends, distance. Items you add by hand survive
 a re-analysis.
@@ -51,11 +56,21 @@ Then open http://localhost:3000.
 | `TRANSCRIPTION_API_KEY` | Enables server-side transcription of narration. Strongly recommended — see below. |
 | `TRANSCRIPTION_API_URL` | Defaults to OpenAI. Any Whisper-compatible endpoint works. |
 | `TRANSCRIPTION_MODEL` | Defaults to `whisper-1`. |
+| `NEXT_PUBLIC_COMPANY_NAME` | Named in the recording notice and the privacy notice. Both are shown to real customers. |
+| `NEXT_PUBLIC_PRIVACY_CONTACT_EMAIL` | Where a customer sends a deletion request. |
+| `NEXT_PUBLIC_COMPANY_ADDRESS` | Optional postal address for the privacy notice. |
+| `VIDEO_RETENTION_DAYS` | How long videos are kept. Defaults to 90. The customer is told this number. |
+| `RETENTION_PURGE_TOKEN` | Shared secret for the purge endpoint. Unset means the purge refuses to run. |
 
 ```bash
-npm test        # 56 tests over the estimating engine, transcripts and access control
+npm test        # 114 tests over estimating, pricing, uploads, retention and access control
 npm run build   # production build + type check
 ```
+
+The same three run in CI on every push (`.github/workflows/ci.yml`). The build is
+there deliberately: it catches what the other two cannot — a server component
+importing something that only exists in the browser, a page that throws while
+rendering.
 
 ## Running it on Supabase
 
@@ -196,7 +211,8 @@ src/app/api/          surveys, capture, video streaming, analysis
 src/lib/db/           sqlite and supabase drivers behind one async interface
 src/lib/storage/      local disk and supabase object storage, same idea
 supabase/migrations/  schema, row-level security, private video bucket
-tests/                56 tests over estimating, transcripts and access control
+src/lib/pricing/      rate card, quote arithmetic — pure, tested
+tests/                114 tests over estimating, pricing, uploads and access control
 ```
 
 Video frames are extracted in the browser with a canvas, and audio with the Web Audio API,
@@ -213,53 +229,109 @@ becomes visible again, and a browser that refuses it just records as before.
 The app needs a **Node runtime with a writable disk**, and it needs to run as a
 **single instance**. Both fall out of the same design decision, explained below.
 
-Railway, Render, Fly.io or any VPS work unchanged:
+### Railway, step by step
 
-- Build command: `npm run build`
-- Start command: `npm start`
-- Environment: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
-  `ANTHROPIC_API_KEY` for real analysis. `PORT` is supplied by the host.
+1. **New project → Deploy from GitHub repo**, pointed at this repository.
+   `railway.json` supplies the build and start commands, the health check and
+   `numReplicas: 1`.
+2. **Add a volume**, mounted at `/data`. This is the one step that is easy to
+   skip and expensive to skip — see below.
+3. **Set the variables**:
 
-That gives you an HTTPS URL, which the customer capture page needs — phone browsers
-refuse camera access over plain HTTP, so a LAN address won't do for testing.
+   ```
+   REMOVALS_SURVEY_DATA_DIR=/data
+   NEXT_PUBLIC_SUPABASE_URL=...
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+   SUPABASE_SERVICE_ROLE_KEY=...
+   ANTHROPIC_API_KEY=...
+   NEXT_PUBLIC_COMPANY_NAME=Your Removals Ltd
+   NEXT_PUBLIC_PRIVACY_CONTACT_EMAIL=privacy@yourfirm.co.uk
+   VIDEO_RETENTION_DAYS=90
+   RETENTION_PURGE_TOKEN=<a long random string>
+   ```
+
+   `PORT` is supplied by Railway. `NEXT_PUBLIC_BASE_URL` can be left unset —
+   the capture link is built from the request's own host.
+4. **Add a cron job** hitting the retention purge daily:
+
+   ```bash
+   curl -fsS -X POST https://your-app.up.railway.app/api/retention/purge \
+        -H "authorization: Bearer $RETENTION_PURGE_TOKEN"
+   ```
+5. **Check `/api/health`.** It reports which services are configured and
+   actually writes a file to prove the disk is there. Anything reading
+   `DISABLED` or `INCOMPLETE` is something a customer would notice.
+6. **Open `/capture/diagnostics` on a real phone** — an iPhone and an Android —
+   before sending a link to anybody. Headless Chromium proves the code paths
+   and proves nothing about Safari.
+
+Render, Fly.io or any VPS work the same way: build `npm run build`, start
+`npm start`, one instance, a persistent disk mounted wherever
+`REMOVALS_SURVEY_DATA_DIR` points.
+
+HTTPS is not optional — phone browsers refuse camera access without it, so a
+LAN address will not do even for testing.
 
 ### Why single-instance, and when that stops being true
 
-While a customer is filming, their browser posts a video chunk every five seconds and the
-server appends each one to the same file on local disk. That is what makes a flat battery
-mid-survey survivable — the recording is already saved. It also means every chunk of a
-given recording has to reach the same machine.
+While a customer is filming, their browser posts a video chunk every five
+seconds and the server appends each one to the same file on local disk. That is
+what makes a flat battery mid-survey survivable — the recording is already
+saved. It also means every chunk of a given recording has to reach the same
+machine, and the same disk has to still be there a minute later.
 
-So this deployment shape will lose recordings:
+So these deployment shapes will lose recordings:
 
-- **Serverless** (Vercel, Cloudflare Workers, Lambda) — each request may land on a
-  different instance, so chunks scatter and the video is corrupt.
+- **Serverless** (Vercel, Cloudflare Workers, Lambda) — each request may land on
+  a different instance, so chunks scatter and the video is corrupt.
 - **More than one instance** behind a load balancer, unless sessions are pinned.
+- **No persistent volume** — the container's filesystem is wiped on every
+  deploy, taking any recording in progress with it.
 
-Neither fails loudly. You get a video that won't play, which is the worst way to find out.
+None of these fail loudly. You get a video that will not play, which is the
+worst way to find out. `/api/health` catches the third case; the first two are
+yours to avoid.
 
-A single container comfortably handles a removals office: chunks are small, and the only
-sustained work is streaming bytes to disk. If you outgrow it, the fix is to stage chunks in
-object storage instead of on disk — `src/lib/storage/` is the only place that changes, and
-the driver interface is already there for it.
-
+A single container comfortably handles a removals office: chunks are small, and
+the only sustained work is streaming bytes to disk. If you outgrow it, the fix
+is to stage chunks in object storage instead of on disk — `src/lib/storage/` is
+the only place that changes, and the driver interface is already there for it.
 
 ## Before this goes near a customer
 
-- **Run it on Supabase, not the local driver.** Without the Supabase keys there are no
-  accounts and no isolation: anyone who reaches the app sees every survey, and the database
-  is a file on disk that can't scale past one instance. See the setup above.
-- **Turn on leaked-password protection.** Supabase can check new passwords against
-  HaveIBeenPwned; it is off by default. One toggle in Auth settings, and worth it for an
-  app holding footage of customers' homes.
-- **Video storage still needs the service-role key.** Without it the app keeps videos on
-  local disk even when the database is Supabase — which works, but doesn't survive a
-  redeploy on ephemeral infrastructure. Add `SUPABASE_SERVICE_ROLE_KEY` to move them into
-  the private bucket. This is the only part of the system that key is used for.
-- **No pricing.** The app produces volume, materials, crew, vehicles and hours. Your rate
-  card turns that into money, and that's deliberately not baked in.
-- **Live video is one-way.** The customer records and it streams to the server as they go.
-  A two-way call where the surveyor talks them round the house needs WebRTC signalling and
-  a TURN server; the capture flow is structured so that can be added alongside.
-- **Retention.** Survey videos are personal data showing the inside of someone's home.
-  Nothing deletes them at present — add a retention policy that matches your privacy notice.
+- **Run it on Supabase, not the local driver.** Without the Supabase keys there
+  are no accounts and no isolation: anyone who reaches the app sees every
+  survey, and the database is a file on disk that cannot scale past one
+  instance. See the setup above.
+- **Fill in who you are.** `NEXT_PUBLIC_COMPANY_NAME` and
+  `NEXT_PUBLIC_PRIVACY_CONTACT_EMAIL` are named in the notice the customer
+  agrees to before filming. Until they are set, the privacy page says it is not
+  fit to show anyone, because a notice that cannot name who holds the footage
+  or where to write to have it deleted is not a notice.
+- **Turn the retention purge on.** `RETENTION_PURGE_TOKEN` unset means the
+  endpoint refuses to run, so nothing is ever deleted — while the notice keeps
+  telling customers their video goes after 90 days.
+- **Enter your rates.** Until you do, every quote is worked out from example
+  figures and says so in red. They are plausible and they are somebody else's
+  margin.
+- **Turn on leaked-password protection.** Supabase can check new passwords
+  against HaveIBeenPwned; it is off by default. One toggle in Auth settings, and
+  worth it for an app holding footage of customers' homes.
+- **Test on real phones.** `/capture/diagnostics` reports what a handset can
+  actually record and whether it can read its own recording back. This is the
+  one thing automated tests cannot cover.
+- **Judge the AI on real footage.** Everything here is verified against
+  synthetic recordings, which proves the plumbing and says nothing about
+  whether the model spots a wardrobe in a cluttered bedroom. Record a real
+  walkthrough, compare the inventory against the room, and re-run the same
+  recording on `claude-opus-5` if it misses things — every survey stores the
+  model that produced it, so the two are directly comparable.
+- **Confirm the carton sizes.** The large carton is set from real stock
+  (610 × 457 × 457mm). The medium, book and wardrobe cartons are standard trade
+  sizes and are marked unconfirmed in `src/lib/estimate/cartons.ts`. Volumes are
+  derived from the dimensions, so correcting them reprices everything
+  downstream.
+- **Live video is one-way.** The customer records and it streams to the server
+  as they go. A two-way call where the surveyor talks them round the house needs
+  WebRTC signalling and a TURN server; the capture flow is structured so that
+  can be added alongside.

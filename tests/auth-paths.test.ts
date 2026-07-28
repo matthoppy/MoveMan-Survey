@@ -32,6 +32,12 @@ test("the installable app shell is public", () => {
   assert.equal(isPublicPath("/icon.svg"), true);
 });
 
+test("the health check is reachable by the host", () => {
+  // A 302 to /login looks healthy to a load balancer, which is how a broken
+  // app stays deployed.
+  assert.equal(isPublicPath("/api/health"), true);
+});
+
 test("the surveyor's side is not public", () => {
   for (const path of [
     "/",
@@ -43,6 +49,9 @@ test("the surveyor's side is not public", () => {
     "/api/surveys/abc/transcribe",
     "/api/surveys/abc/video",
     "/api/videos/abc",
+    "/settings",
+    "/api/settings/rate-card",
+    "/surveys/abc/quote",
   ]) {
     assert.equal(isPublicPath(path), false, `${path} must require a session`);
   }

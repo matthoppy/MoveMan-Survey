@@ -21,6 +21,9 @@ const PUBLIC_PREFIXES = [
   // Called by a scheduler, not a browser; it authenticates with its own shared
   // secret rather than a session, so a redirect to /login would just break it.
   "/api/retention/purge",
+  // Polled by the host to decide whether the container is alive. A 302 to
+  // /login reads as healthy, which is how a broken app stays deployed.
+  "/api/health",
 ];
 
 export function isPublicPath(pathname: string): boolean {
