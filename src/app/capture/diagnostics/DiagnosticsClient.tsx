@@ -200,12 +200,12 @@ export function DiagnosticsClient() {
       // breaks on Safari, so check rather than assume.
       const playable = await canPlay(new Blob(chunks, { type: baseMimeType(mimeType) }));
       add({
-        name: "Chunks play back",
+        name: "Chunks read back and seek",
         verdict: playable.ok ? "pass" : "fail",
         detail: playable.detail,
         consequence: playable.ok
           ? undefined
-          : "Chunks record but do not reassemble into a playable video on this phone. Surveys from this device would arrive corrupt — report this.",
+          : "The recording cannot be stepped through, which is how the inventory is read from it. Surveys from this phone would arrive unusable — report this.",
       });
     } catch (err) {
       add({
@@ -322,33 +322,101 @@ function canUseStorage(): boolean {
   }
 }
 
-/** Loads the recorded blob back and checks the browser can read a duration from it. */
-function canPlay(blob: Blob): Promise<{ ok: boolean; detail: string }> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.muted = true;
+/**
+ * Loads the recorded blob back and puts it through what analysis actually does.
+ *
+ * Opening the file is not the test. MediaRecorder WebM carries no duration in
+ * its header until the browser has scanned to the end, so a recording can read
+ * back perfectly and still be useless: the analyser samples keyframes by
+ * seeking to timestamps, and it cannot pick timestamps in a video whose length
+ * is unknown and cannot seek in one that will not seek. Both are worked around
+ * in `frames.ts` by seeking past the end to force the browser to work the
+ * duration out — this checks that workaround on the phone in your hand rather
+ * than assuming it.
+ */
+async function canPlay(blob: Blob): Promise<{ ok: boolean; detail: string }> {
+  const url = URL.createObjectURL(blob);
+  const video = document.createElement("video");
+  video.preload = "auto";
+  video.muted = true;
+  video.playsInline = true;
 
-    const done = (ok: boolean, detail: string) => {
-      URL.revokeObjectURL(url);
-      resolve({ ok, detail });
-    };
+  const event = (name: string, ms: number) =>
+    new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), ms);
+      video.addEventListener(
+        name,
+        () => {
+          clearTimeout(timer);
+          resolve(true);
+        },
+        { once: true },
+      );
+    });
 
-    const timer = setTimeout(() => done(false, "timed out reading the recording back"), 8000);
-
-    video.onloadedmetadata = () => {
-      clearTimeout(timer);
-      const seconds = Number.isFinite(video.duration) ? video.duration.toFixed(1) : "unknown";
-      // A duration the browser cannot work out is normal for MediaRecorder
-      // WebM and is handled during analysis, so it is not a failure on its own.
-      done(true, `read back, duration ${seconds}s, ${video.videoWidth}×${video.videoHeight}`);
-    };
-    video.onerror = () => {
-      clearTimeout(timer);
-      done(false, "the browser could not open its own recording");
-    };
-
+  try {
+    const opened = Promise.race([
+      event("loadedmetadata", 8000),
+      event("error", 8000).then(() => false),
+    ]);
+    // Listeners are attached before the source is set, so a file that fails
+    // instantly cannot fire its error before anything is listening.
     video.src = url;
-  });
+    if (!(await opened)) {
+      return { ok: false, detail: "the browser could not open its own recording" };
+    }
+
+    const size = `${video.videoWidth}×${video.videoHeight}`;
+    let duration = video.duration;
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+      // The same trick analysis uses: seek far past the end and the browser
+      // scans the file to find out where the end actually is.
+      video.currentTime = Number.MAX_SAFE_INTEGER;
+      await event("seeked", 8000);
+      duration = Number.isFinite(video.duration)
+        ? video.duration
+        : video.seekable.length > 0
+          ? video.seekable.end(0)
+          : NaN;
+
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return {
+          ok: false,
+          detail: `${size}, but the length could not be worked out even by seeking`,
+        };
+      }
+    }
+
+    // Now prove a frame can be grabbed from the middle, which is the actual
+    // operation analysis performs twenty times per survey.
+    video.currentTime = duration / 2;
+    const seeked = await event("seeked", 8000);
+    if (!seeked) return { ok: false, detail: `${size}, ${duration.toFixed(1)}s, but will not seek` };
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return { ok: false, detail: "this browser cannot process video frames" };
+
+    context.drawImage(video, 0, 0);
+    const frame = canvas.toDataURL("image/jpeg", 0.72);
+
+    // A frame that decoded to nothing still produces a valid data URL, just a
+    // tiny one. Analysis would send twenty grey rectangles and get an empty
+    // inventory back, blaming the model.
+    if (frame.length < 2000) {
+      return { ok: false, detail: `${size}, ${duration.toFixed(1)}s, but frames come back blank` };
+    }
+
+    return {
+      ok: true,
+      detail: `${size}, ${duration.toFixed(1)}s, frame grabbed (${Math.round(frame.length / 1024)} KB)`,
+    };
+  } finally {
+    URL.revokeObjectURL(url);
+    video.removeAttribute("src");
+    video.load();
+  }
 }
