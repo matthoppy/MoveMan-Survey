@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { baseMimeType, pickRecorderMimeType, uploadBlob } from "@/lib/client/upload";
+import {
+  baseMimeType,
+  pickRecorderMimeType,
+  uploadBlob,
+  uploadFileInChunks,
+} from "@/lib/client/upload";
 import { ChunkQueue, type ChunkQueueState } from "@/lib/client/chunk-queue";
 import { isSpeechSupported, startTranscribing, type TranscriberHandle } from "@/lib/client/speech";
 import { keepScreenAwake, type WakeLockHandle } from "@/lib/client/wakelock";
@@ -344,13 +349,11 @@ export function CaptureClient({
     try {
       const durationSec = await readDuration(file).catch(() => null);
 
-      await uploadBlob({
+      await uploadFileInChunks({
         url: uploadUrl,
-        blob: file,
+        file,
         mimeType: baseMimeType(file.type),
-        mode: "upload",
         durationSec,
-        complete: true,
         onProgress: setProgress,
       });
 

@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { getSurveyByToken } from "@/lib/db";
-import { isSupportedVideoType, storeUpload } from "@/lib/video-upload";
+import { isSupportedVideoType, storeUpload, UploadTruncatedError } from "@/lib/video-upload";
 import type { CaptureMode } from "@/lib/types";
+
+/** What the client said it was sending, or null if it did not say. */
+function contentLength(request: Request): number | null {
+  const raw = request.headers.get("content-length");
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
 
 export const dynamic = "force-dynamic";
 /** Uploads are streamed to disk, so give a long-running capture room to finish. */
@@ -51,9 +59,15 @@ export async function POST(request: Request, { params }: Params) {
       videoId,
       complete,
       captureToken: token,
+      expectedBytes: contentLength(request),
     });
     return NextResponse.json({ video });
   } catch (error) {
+    if (error instanceof UploadTruncatedError) {
+      // 413, so the client knows to send it in pieces rather than retrying
+      // the whole thing and being cut off at the same place.
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
     const message = error instanceof Error ? error.message : "Upload failed";
     return NextResponse.json({ error: message }, { status: 400 });
   }

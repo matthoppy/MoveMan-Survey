@@ -43,6 +43,22 @@ export interface UploadOptions {
    * so the customer-facing path needs no privileged credentials at all.
    */
   captureToken?: string;
+  /** Content-Length, so a body that stops short can be told from one that finished. */
+  expectedBytes?: number | null;
+}
+
+/** Thrown when fewer bytes arrived than the client said it was sending. */
+export class UploadTruncatedError extends Error {
+  constructor(
+    readonly received: number,
+    readonly expected: number,
+  ) {
+    super(
+      `Only ${Math.round(received / 1024 / 1024)} MB of a ${Math.round(expected / 1024 / 1024)} MB ` +
+        `upload arrived, so the video would have been cut short. Nothing has been saved.`,
+    );
+    this.name = "UploadTruncatedError";
+  }
 }
 
 /**
@@ -55,6 +71,7 @@ export interface UploadOptions {
  */
 export async function storeUpload(options: UploadOptions): Promise<VideoRecord> {
   const { survey, body, mimeType, mode, durationSec, videoId, complete, captureToken } = options;
+  const expectedBytes = options.expectedBytes ?? null;
 
   const appending = Boolean(videoId);
   const filename = videoId
@@ -62,7 +79,23 @@ export async function storeUpload(options: UploadOptions): Promise<VideoRecord> 
     : `${survey.id}-${Date.now()}.${extensionFor(mimeType)}`;
 
   const storage = getStorage();
-  let sizeBytes = await storage.writeChunk(filename, body, appending);
+  const written = await storage.writeChunk(filename, body, appending);
+
+  /**
+   * A body that ends early ends cleanly, so nothing throws.
+   *
+   * This is not hypothetical: the request body is capped somewhere above this
+   * code at about 10 MB, and before this check a 300 MB survey was written as
+   * its first 10 MB, marked complete, and reported back as a successful
+   * upload. The office would have priced a house from the hallway. Content-
+   * Length is what the client said it was sending, so anything less than that
+   * is a truncated file and must not be passed off as a recording.
+   */
+  if (expectedBytes !== null && written.writtenBytes < expectedBytes) {
+    throw new UploadTruncatedError(written.writtenBytes, expectedBytes);
+  }
+
+  let sizeBytes = written.totalBytes;
   if (complete) sizeBytes = await storage.finalize(filename, mimeType);
 
   if (captureToken) {

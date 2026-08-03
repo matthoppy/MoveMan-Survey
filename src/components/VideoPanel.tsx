@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { extractFrames } from "@/lib/client/frames";
 import { allocateFrames, sum } from "@/lib/frame-budget";
 import { transcribeVideo } from "@/lib/client/transcribe";
-import { baseMimeType, uploadBlob } from "@/lib/client/upload";
+import { baseMimeType, uploadFileInChunks } from "@/lib/client/upload";
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
 import type { SurveyView } from "@/lib/survey-view";
 
@@ -45,12 +45,10 @@ export function VideoPanel({
     setProgress(0);
 
     try {
-      const result = await uploadBlob({
+      const result = await uploadFileInChunks({
         url: `/api/surveys/${survey.id}/video`,
-        blob: file,
+        file,
         mimeType: baseMimeType(file.type),
-        mode: "upload",
-        complete: true,
         onProgress: setProgress,
       });
 

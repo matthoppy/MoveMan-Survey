@@ -8,8 +8,12 @@
 export interface VideoStorage {
   readonly name: "local" | "supabase";
 
-  /** Append a chunk to a recording in progress. Returns the bytes staged so far. */
-  writeChunk(filename: string, body: ReadableStream<Uint8Array> | null, append: boolean): Promise<number>;
+  /** Append a chunk to a recording in progress. */
+  writeChunk(
+    filename: string,
+    body: ReadableStream<Uint8Array> | null,
+    append: boolean,
+  ): Promise<WriteResult>;
 
   /** Called once the recording is complete. Returns the final size in bytes. */
   finalize(filename: string, mimeType: string): Promise<number>;
@@ -18,6 +22,20 @@ export interface VideoStorage {
   resolve(filename: string, mimeType: string): Promise<ResolvedVideo>;
 
   remove(filename: string): Promise<void>;
+}
+
+export interface WriteResult {
+  /** Size of the staged recording after this write. */
+  totalBytes: number;
+  /**
+   * Bytes taken from *this* request.
+   *
+   * Reported separately so the caller can check it against Content-Length. A
+   * request body can end early — a proxy, a framework limit, a dropped
+   * connection — and a stream that ends early ends *cleanly*, so nothing
+   * throws and the short file looks like a complete one.
+   */
+  writtenBytes: number;
 }
 
 export type ResolvedVideo =

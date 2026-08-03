@@ -84,6 +84,69 @@ export function uploadBlob(opts: {
   });
 }
 
+/**
+ * How much of a file goes in one request.
+ *
+ * The request body is capped above this app at around 10 MB — a limit that
+ * gave no error, just a silently truncated file — so a whole-file upload of
+ * any real survey could never work. Five megabytes leaves room under that cap
+ * and matches the size of the chunks live recording already sends, so both
+ * paths exercise the same server code.
+ */
+const UPLOAD_CHUNK_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Sends a file the customer already had on their phone, in pieces.
+ *
+ * Identical on the wire to a live recording: the first piece creates the
+ * video, the rest append to it by id, and the last one marks it complete. A
+ * 300 MB holiday-length walkthrough goes up as sixty ordinary requests rather
+ * than one that cannot succeed.
+ */
+export async function uploadFileInChunks(opts: {
+  url: string;
+  file: Blob;
+  mimeType: string;
+  durationSec?: number | null;
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}): Promise<{ video: { id: string } }> {
+  const total = opts.file.size;
+  let videoId: string | null = null;
+  let sent = 0;
+  let last: { video: { id: string } } | null = null;
+
+  for (let start = 0; start < total; start += UPLOAD_CHUNK_BYTES) {
+    const end = Math.min(start + UPLOAD_CHUNK_BYTES, total);
+    const isLast = end >= total;
+
+    last = await uploadBlob({
+      url: opts.url,
+      blob: opts.file.slice(start, end),
+      mimeType: opts.mimeType,
+      mode: "upload",
+      videoId,
+      // Duration is only known for the whole file, so it rides on the last
+      // request — the one that closes the recording off.
+      durationSec: isLast ? opts.durationSec : null,
+      complete: isLast,
+      signal: opts.signal,
+      onProgress: (fraction) => opts.onProgress?.((sent + fraction * (end - start)) / total),
+    });
+
+    videoId = last.video.id;
+    sent = end;
+    opts.onProgress?.(sent / total);
+  }
+
+  if (!last) {
+    // A zero-byte file would otherwise loop zero times and return nothing.
+    throw new UploadError("That file is empty.", 0);
+  }
+
+  return last;
+}
+
 /** Pick the best container this browser will actually record. */
 export function pickRecorderMimeType(): string {
   const candidates = [
