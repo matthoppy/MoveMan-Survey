@@ -24,7 +24,7 @@ export type StorageChoice = "local" | "supabase";
  *    of a phone recording.
  */
 export function storageChoice(): StorageChoice {
-  const configured = process.env.VIDEO_STORAGE?.trim().toLowerCase();
+  const configured = normaliseChoice(process.env.VIDEO_STORAGE);
 
   if (configured === "local") return "local";
   if (configured === "supabase") return "supabase";
@@ -32,6 +32,23 @@ export function storageChoice(): StorageChoice {
   // Unset: keep the original behaviour so an existing deployment does not
   // silently move its videos somewhere new on the next release.
   return isSupabaseConfigured() && process.env.SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "local";
+}
+
+/**
+ * Tidies up how the value was actually typed.
+ *
+ * Hosting dashboards are pasted into, and a value pasted with quotes arrives
+ * as `"local"` rather than `local`. Without stripping them the setting is
+ * ignored, the app carries on with the other backend, and the only symptom is
+ * that the thing you just configured did not change.
+ */
+function normaliseChoice(raw: string | undefined): string | undefined {
+  return raw?.trim().replace(/^['"]|['"]$/g, "").toLowerCase() || undefined;
+}
+
+/** What the operator actually set, for the health check to report back. */
+export function configuredStorage(): string {
+  return normaliseChoice(process.env.VIDEO_STORAGE) ?? "(unset — inferred)";
 }
 
 export function getStorage(): VideoStorage {

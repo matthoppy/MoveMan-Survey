@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { videoDir } from "@/lib/paths";
-import { storageChoice } from "@/lib/storage";
+import { configuredStorage, storageChoice } from "@/lib/storage";
 import { isSupabaseConfigured } from "@/lib/db";
 import { isAiConfigured } from "@/lib/analysis";
 import { companyIdentity } from "@/lib/company";
@@ -25,6 +25,9 @@ export async function GET() {
   const checks: Record<string, unknown> = {
     supabase: isSupabaseConfigured() ? "configured" : "local sqlite",
     videoStorage: storageChoice() === "supabase" ? "supabase bucket" : "local disk",
+    // Echoed back so a setting that did not take — a typo, stray quotes, a
+    // deploy that never picked it up — can be told apart from one that did.
+    videoStorageSetting: configuredStorage(),
     // Named because it is the ceiling people meet first: a Supabase project
     // caps a single object by plan, and 50 MB is under three minutes of video.
     videoStorageNote:
