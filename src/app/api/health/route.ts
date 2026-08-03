@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { videoDir } from "@/lib/paths";
+import { storageChoice } from "@/lib/storage";
 import { isSupabaseConfigured } from "@/lib/db";
 import { isAiConfigured } from "@/lib/analysis";
 import { companyIdentity } from "@/lib/company";
@@ -23,7 +24,13 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const checks: Record<string, unknown> = {
     supabase: isSupabaseConfigured() ? "configured" : "local sqlite",
-    videoStorage: process.env.SUPABASE_SERVICE_ROLE_KEY ? "supabase bucket" : "local disk",
+    videoStorage: storageChoice() === "supabase" ? "supabase bucket" : "local disk",
+    // Named because it is the ceiling people meet first: a Supabase project
+    // caps a single object by plan, and 50 MB is under three minutes of video.
+    videoStorageNote:
+      storageChoice() === "supabase"
+        ? "one object per video — check the project's storage size limit covers a full survey"
+        : "no size ceiling beyond the volume",
     ai: isAiConfigured() ? "configured" : "transcript-only fallback",
     transcription: process.env.TRANSCRIPTION_API_KEY ? "configured" : "browser only",
     retentionDays: retentionDays(),

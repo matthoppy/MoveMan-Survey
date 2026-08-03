@@ -51,7 +51,8 @@ Then open http://localhost:3000.
 | `REMOVALS_SURVEY_DATA_DIR` | Where the SQLite database and video files are written. Defaults to `./data`. |
 | `NEXT_PUBLIC_SUPABASE_URL` | Set these three to switch to Postgres, accounts and object storage. |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser-safe key, used for signing in. |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Optional.** Only needed to store video in Supabase Storage; the request path never uses it. |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Optional.** Needed for Supabase video storage and the retention purge; the request path never uses it. |
+| `VIDEO_STORAGE` | `local` or `supabase`. See the size ceiling below before choosing `supabase`. |
 | `NEXT_PUBLIC_BASE_URL` | Used to build customer capture links. Falls back to the request's own host. |
 | `TRANSCRIPTION_API_KEY` | Enables server-side transcription of narration. Strongly recommended — see below. |
 | `TRANSCRIPTION_API_URL` | Defaults to OpenAI. Any Whisper-compatible endpoint works. |
@@ -116,6 +117,18 @@ publishable key.
 Supabase's database linter will flag those three functions as "public can execute security
 definer function". That is expected and reviewed: it is the design, and the alternative is
 strictly worse. Everything else the linter flagged has been fixed in `0005`.
+
+**Where the video ends up, and the ceiling you will meet first.** Object storage caps
+how big a single object can be, and on Supabase that cap comes from the project's plan —
+**50 MB on the free plan**. A phone records at roughly 2.5 Mbps, so 50 MB is under three
+minutes. A survey longer than that uploads every chunk successfully and then fails at the
+very end, when the assembled file is pushed to the bucket, after the customer has finished
+filming and walked away.
+
+So `VIDEO_STORAGE=local` is the right default for most deployments: the app already
+requires a persistent volume for staging chunks, so keeping the finished file there adds
+no new requirement and no size limit. Use `supabase` when the volume is the thing you
+don't trust, and only with a plan whose object limit covers a full survey.
 
 **How video storage works.** Chunks are staged on local disk while the customer is still
 filming — that's what makes a flat battery mid-survey survivable — and the finished file is

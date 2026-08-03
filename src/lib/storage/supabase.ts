@@ -39,7 +39,17 @@ export const supabaseStorage: VideoStorage = {
 
     if (error) {
       // Leave the staged copy alone — it is the only copy, and losing a survey
-      // video because an upload blipped is not acceptable.
+      // video because an upload blipped is not acceptable. The recording is
+      // still on the server's disk and playable; only the move to the bucket
+      // failed, so switching VIDEO_STORAGE recovers it without re-filming.
+      if (/maximum allowed size|exceeded/i.test(error.message)) {
+        throw new Error(
+          `This recording is ${Math.round(bytes / 1024 / 1024)} MB, which is larger than the ` +
+            `Supabase project allows in one object — the free plan caps it at 50 MB, about three ` +
+            `minutes of phone video. The recording is safe on the server's disk. Either set ` +
+            `VIDEO_STORAGE=local to keep videos there, or raise the storage limit on a paid plan.`,
+        );
+      }
       throw new Error(`Could not store the video: ${error.message}`);
     }
 
